@@ -17,14 +17,7 @@ func PushToBroker(job types.Job) error {
 	client := &http.Client{
 		Timeout: 10 * time.Millisecond,
 	}
-	//data, _ := json.Marshal(job)
-	//then configure how the structure of the data tbs has to be
-	// something like{
-	//metadata
-	// then data
-	//
-	//}
-	// meta data will have id or something ...maybe
+
 	tbs, _ := json.Marshal(types.JobTbs{
 		Data: job,
 		MetaData: types.Metadata{

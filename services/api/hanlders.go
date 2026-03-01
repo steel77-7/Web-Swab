@@ -3,6 +3,7 @@ package api
 import (
 	"log"
 	"scraper/internals/broker"
+	response "scraper/internals/responses"
 	"scraper/internals/types"
 
 	"github.com/gin-gonic/gin"
@@ -26,8 +27,14 @@ func Ingest(c *gin.Context) { // ingest route
 	//verify with the db
 	//verify_key(apikey)
 
-	broker.PushToBroker(data.JobData)
-	c.JSON(200, gin.H{})
+	err_broker := broker.PushToBroker(data.JobData)
+	if err_broker != nil {
+		log.Print("Couldnt push to the broker:", err_broker)
+		response.Fail(c, 500, err_broker.Error())
+		return
+	}
+	//if the job is added to the broker
+	response.Success(c, 200, struct{}{})
 
 }
 

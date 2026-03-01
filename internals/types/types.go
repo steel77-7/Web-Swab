@@ -27,8 +27,8 @@ type Job struct {
 
 // for auth and storing the user
 type User struct {
-	ID  string `json:"id"`
-	Key string `json:"key"`
+	ID     string `json:"id"`
+	APIKey string `json:"api_key"`
 }
 
 type JobRepository interface {
@@ -51,4 +51,12 @@ type Metadata struct {
 type JobTbs struct {
 	Data     Job      `json:"job"`
 	MetaData Metadata `json:"metadata"`
+}
+
+// responses
+type APIResponse struct {
+	Success bool        `json:"success"`
+	Code    int         `json:"code"`
+	Data    interface{} `json:"data,omitempty"`
+	Error   string      `json:"error,omitempty"`
 }
