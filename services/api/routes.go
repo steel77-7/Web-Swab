@@ -11,6 +11,7 @@ func NewRouter() *gin.Engine {
 	router.GET("/", Home)
 	router.POST("/ingest", Ingest)
 	router.POST("/poll", Poll)
+	router.GET("/ws")
 
 	return router
 }

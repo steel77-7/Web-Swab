@@ -5,7 +5,9 @@ import (
 	"scraper/internals/broker"
 	response "scraper/internals/responses"
 	"scraper/internals/types"
+	"scraper/internals/websockets"
 
+	"github.com/coder/websocket"
 	"github.com/gin-gonic/gin"
 )
 
@@ -40,4 +42,17 @@ func Ingest(c *gin.Context) { // ingest route
 
 func Poll(c *gin.Context) {
 	c.JSON(200, gin.H{})
+}
+
+func SocketHanlder(c *gin.Context) {
+	conn, err := websocket.Accept(c.Writer, c.Request, &websocket.AcceptOptions{
+		InsecureSkipVerify: true,
+	})
+	if err != nil {
+		log.Fatal("Handshake failed: ", err)
+		return
+	}
+	//	v:=c.Request.Context()
+	websockets.AcceptChan <- conn
+
 }

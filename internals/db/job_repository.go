@@ -3,6 +3,8 @@ package db
 import (
 	"context"
 	"log"
+	"scraper/internals/types"
+	"scraper/internals/websockets"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -44,6 +46,31 @@ func (j *JobRepository) UpdateStatus(id string, status string) error {
 	return nil
 }
 
+// func (j *JobRepository) Listen() {
+// 	_, err := j.Pool.Exec(CTX, "LISTEN FOR job_updates")
+// 	if err != nil {
+// 		log.Fatal("COuldnt start the listening to the db")
+// 		return
+// 	}
+// 	for {
+// 		func(){
+
+// 		notification, err := j.Pool.WaitForNotification(CTX)
+// 		if err != nil {
+// 			log.Println("Listening error:", err)
+// 			continue
+// 		}
+// 		}
+// 		//thsi may casue a lot of delay but lets do it for now
+// 		// maybe have another goroutine for picking up the eevtns and then send them to the socket server
+// 		jobID := notification.Payload
+
+// 		websockets.DBEventChan<-
+// 	}
+
+// }
+var ServerSendChan = make(chan string, 1000)
+
 func (j *JobRepository) Listen() {
 	_, err := j.Pool.Exec(CTX, "LISTEN FOR job_updates")
 	if err != nil {
@@ -51,15 +78,43 @@ func (j *JobRepository) Listen() {
 		return
 	}
 	for {
+
 		notification, err := j.Pool.WaitForNotification(CTX)
 		if err != nil {
 			log.Println("Listening error:", err)
 			continue
 		}
-		jobID := notification.Payload
-		//then launch the paylaod to the redis pub sub from where the  the socket hadnler will catch it and then feed to some connection
-		// a map keeping track of the thing ...and then msg on the update channel and then that trasnferred to then a map will be used to do it in O(1) time so yesssss
-		// but the go routines will scale lineraly to the connections ......500 mb .......too much
+		ServerSendChan <- notification.Payload
+
+		//thsi may casue a lot of delay but lets do it for now
+		// maybe have another goroutine for picking up the eevtns and then send them to the socket server
+
+		//	websockets.DBEventChan<-
 	}
 
+}
+
+// fetcher
+func (j *JobRepository) SendToServer() {
+	q := `SELECT id ,user_id, status FROM jobs WHERE id = $1`
+	for {
+		id := <-ServerSendChan
+		row := j.Pool.QueryRow(CTX, q, id)
+		// if err != nil {
+		// 	log.Print("Error in the send to server thing in the job repo")
+		// 	continue
+		// }
+		var jobID string
+		var userID string
+		var status string
+
+		err := row.Scan(&jobID, &userID, &status)
+		if err != nil {
+			log.Print("Error in the send to server thing in the job repo")
+			continue
+		}
+		websockets.DBEventChan <- websockets.Event{
+			ClientID: userID, Status: types.JobStatus(status), JobID: jobID,
+		}
+	}
 }
