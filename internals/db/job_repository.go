@@ -52,7 +52,6 @@ func (j *JobRepository) FetchJob(id string) error {
 		&job.Depth,
 		&job.UserID,
 	)
-
 	if err != nil {
 		log.Println("job fetch error:", err)
 		return err
@@ -69,29 +68,6 @@ func (j *JobRepository) UpdateStatus(id string, status string) error {
 	return nil
 }
 
-// func (j *JobRepository) Listen() {
-// 	_, err := j.Pool.Exec(CTX, "LISTEN FOR job_updates")
-// 	if err != nil {
-// 		log.Fatal("COuldnt start the listening to the db")
-// 		return
-// 	}
-// 	for {
-// 		func(){
-
-// 		notification, err := j.Pool.WaitForNotification(CTX)
-// 		if err != nil {
-// 			log.Println("Listening error:", err)
-// 			continue
-// 		}
-// 		}
-// 		//thsi may casue a lot of delay but lets do it for now
-// 		// maybe have another goroutine for picking up the eevtns and then send them to the socket server
-// 		jobID := notification.Payload
-
-// 		websockets.DBEventChan<-
-// 	}
-
-// }
 var ServerSendChan = make(chan string, 1000)
 
 func (j *JobRepository) Listen() {
@@ -109,10 +85,6 @@ func (j *JobRepository) Listen() {
 		}
 		ServerSendChan <- notification.Payload
 
-		//thsi may casue a lot of delay but lets do it for now
-		// maybe have another goroutine for picking up the eevtns and then send them to the socket server
-
-		//	websockets.DBEventChan<-
 	}
 
 }
@@ -123,10 +95,6 @@ func (j *JobRepository) SendToServer() {
 	for {
 		id := <-ServerSendChan
 		row := j.Pool.QueryRow(CTX, q, id)
-		// if err != nil {
-		// 	log.Print("Error in the send to server thing in the job repo")
-		// 	continue
-		// }
 		var jobID string
 		var userID string
 		var status string

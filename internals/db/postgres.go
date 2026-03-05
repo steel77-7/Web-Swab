@@ -4,6 +4,9 @@ package db
 import (
 	"context"
 	"log"
+	config "scraper"
+
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // func NewDbPool() (*pgxpool.Pool, func(), error) {
