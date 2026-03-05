@@ -40,8 +40,8 @@ func Ingest(c *gin.Context) { // ingest route
 
 }
 
-func Poll(c *gin.Context) {
-	c.JSON(200, gin.H{})
+func AskData(c *gin.Context) {
+
 }
 
 func SocketHanlder(c *gin.Context) {

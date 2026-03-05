@@ -62,21 +62,6 @@ func (s *Server) acceptConnections() {
 	}
 }
 
-// func (c *Client) readloop(ctx context.Context) {
-// 	defer c.Conn.Close(websocket.StatusNormalClosure, "")
-// 	var tba any
-// 	for {
-// 		err := c.Conn.Read(ctx)
-// 		if err != nil {
-// 			log.Print("Couldnt read values from client: ", c.ID)
-// 			continue
-// 		}
-// 		var msg Message
-// 		json.Unmarshal(tba ,&msg )
-// 		//message will be fed to another module
-
-//		}
-//	}
 func (s *Server) readloop(c *Client, ctx context.Context) {
 	defer c.Conn.Close(websocket.StatusNormalClosure, "")
 
@@ -139,9 +124,6 @@ func (s *Server) send(c *Client, msg Message) error {
 
 // short lived go routines for seindiong data back to the client
 func (s *Server) writer() {
-	//maybe a constantt funning go routine subsribed to the postgress for fired when the data arrives
-	// bot hare eve ndriven just a selection of what module will handle what
-	// v1
 	for {
 		event := <-DBEventChan
 		//then feed thsi to the map
@@ -158,10 +140,3 @@ func (s *Server) writer() {
 
 	}
 }
-
-// func DBListener() {
-// 	for {
-// 		//this will get the values published by the database and then use them
-
-// 	}
-// }

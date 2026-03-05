@@ -21,7 +21,7 @@ func (j *JobRepository) StoreJob(job types.Job) error {
 		context.Background(),
 		q,
 		job.ID,
-		job.URL,
+		job.Url,
 		job.Depth,
 		job.Status,
 		time.Now(),
@@ -37,6 +37,29 @@ func (j *JobRepository) StoreJob(job types.Job) error {
 
 }
 
+func (j *JobRepository) FetchJob(id string) error {
+	q := `
+	SELECT id, status, url, depth, user_id
+	FROM jobs
+	WHERE id = $1
+	`
+	var job types.Job
+	row := j.Pool.QueryRow(CTX, q, id)
+	err := row.Scan(
+		&job.ID,
+		&job.Status,
+		&job.Url,
+		&job.Depth,
+		&job.UserID,
+	)
+
+	if err != nil {
+		log.Println("job fetch error:", err)
+		return err
+	}
+	return nil
+
+}
 func (j *JobRepository) UpdateStatus(id string, status string) error {
 	q := `UPDATE jobs SET status  = $1 WHERE id = $2 NOTIFY job_updates , $2`
 	_, err := j.Pool.Exec(CTX, q, status, id)
