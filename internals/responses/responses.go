@@ -1,9 +1,8 @@
 package response
 
 import (
-	"scraper/internals/types"
-
 	"github.com/gin-gonic/gin"
+	"github.com/steel77-7/Web-Swab/internals/types"
 )
 
 func Success(c *gin.Context, code int, data interface{}) {

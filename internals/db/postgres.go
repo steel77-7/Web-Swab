@@ -4,30 +4,26 @@ package db
 import (
 	"context"
 	"log"
-	config "scraper"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/steel77-7/Web-Swab/config"
 )
 
-// func NewDbPool() (*pgxpool.Pool, func(), error) {
-// 	pool, err := pgxpool.Connect(context.Background(), config.Conf.DB_URI)
-// 	f := func() {}
-// 	if err != nil {
-// 		log.Fatal("Couldnt connect to the database: ", err)
-// 		return nil, f, err
-// 	}
-// 	return pool, func() { pool.Close() }, nil
-
-// }
 var CTX = context.Background()
+var JobHandler JobRepository
+var UserHandler UserRepository
 
-func NewDbPool() (*pgxpool.Pool, error) {
-	pool, err := pgxpool.Connect(CTX, config.Conf.DB_URI)
+func NewDbPoolInit() {
+	log.Print("2")
+
+	log.Print(config.Conf.DB_URI)
+	pool, err := pgxpool.New(CTX, config.Conf.DB_URI)
 	//	f := func() {}
 	if err != nil {
 		log.Fatal("Couldnt connect to the database: ", err)
-		return nil, err
+		return
 	}
-	return pool, nil
+	JobHandler.Pool = pool
+	UserHandler.Pool = pool
 
 }

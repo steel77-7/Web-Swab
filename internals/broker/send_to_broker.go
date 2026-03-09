@@ -8,9 +8,10 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	config "scraper"
-	"scraper/internals/types"
 	"time"
+
+	"github.com/steel77-7/Web-Swab/config"
+	"github.com/steel77-7/Web-Swab/internals/types"
 )
 
 func PushToBroker(job types.Job) error {

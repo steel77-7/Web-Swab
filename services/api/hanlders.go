@@ -2,13 +2,14 @@ package api
 
 import (
 	"log"
-	"scraper/internals/broker"
-	response "scraper/internals/responses"
-	"scraper/internals/types"
-	"scraper/internals/websockets"
 
 	"github.com/coder/websocket"
 	"github.com/gin-gonic/gin"
+	"github.com/steel77-7/Web-Swab/internals/broker"
+	"github.com/steel77-7/Web-Swab/internals/db"
+	response "github.com/steel77-7/Web-Swab/internals/responses"
+	"github.com/steel77-7/Web-Swab/internals/types"
+	"github.com/steel77-7/Web-Swab/websockets"
 )
 
 func Home(c *gin.Context) { //  / route
@@ -19,6 +20,8 @@ func Home(c *gin.Context) { //  / route
 // make a middleware to authenticate this request
 func Ingest(c *gin.Context) { // ingest route
 	api_key := c.Request.Header["key"]
+	user_id := c.Request.Header["user"]
+
 	//this will then be sent to verify db to store or verify shit
 	var data types.JobRequest
 	err := c.ShouldBindJSON(&data)
@@ -27,7 +30,10 @@ func Ingest(c *gin.Context) { // ingest route
 		return
 	}
 	//verify with the db
-	//verify_key(apikey)
+	if !db.UserHandler.VerifyUser(types.User{ID: user_id[0], APIKey: api_key[0]}) {
+		response.Fail(c, 404, "User not found")
+		return
+	}
 
 	err_broker := broker.PushToBroker(data.JobData)
 	if err_broker != nil {
@@ -40,19 +46,29 @@ func Ingest(c *gin.Context) { // ingest route
 
 }
 
-func AskData(c *gin.Context) {
+func SocketHandler(c *gin.Context) {
+	log.Print("socket handler")
 
-}
+	apiKey := c.GetHeader("Key")
+	userID := c.GetHeader("User")
 
-func SocketHanlder(c *gin.Context) {
+	if !db.UserHandler.VerifyUser(types.User{
+		ID:     userID,
+		APIKey: apiKey,
+	}) {
+		c.AbortWithStatus(401)
+		return
+	}
+
 	conn, err := websocket.Accept(c.Writer, c.Request, &websocket.AcceptOptions{
 		InsecureSkipVerify: true,
 	})
 	if err != nil {
-		log.Fatal("Handshake failed: ", err)
+		log.Println("Handshake failed:", err)
 		return
 	}
-	//	v:=c.Request.Context()
+
 	websockets.AcceptChan <- conn
 
+	// do NOT write HTTP response here
 }

@@ -3,11 +3,11 @@ package db
 import (
 	"context"
 	"log"
-	"scraper/internals/types"
-	"scraper/internals/websockets"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/steel77-7/Web-Swab/internals/types"
+	"github.com/steel77-7/Web-Swab/websockets"
 )
 
 type JobRepository struct {
@@ -70,23 +70,49 @@ func (j *JobRepository) UpdateStatus(id string, status string) error {
 
 var ServerSendChan = make(chan string, 1000)
 
+// func (j *JobRepository) Listen() {
+// 	_, err := j.Pool.Exec(CTX, "LISTEN FOR job_updates")
+// 	if err != nil {
+// 		log.Fatal("COuldnt start the listening to the db")
+// 		return
+// 	}
+// 	for {
+
+// 		notification, err := j.Pool.WaitForNotification(CTX)
+// 		if err != nil {
+// 			log.Println("Listening error:", err)
+// 			continue
+// 		}
+// 		ServerSendChan <- notification.Payload
+
+// 	}
+
+// }
+
 func (j *JobRepository) Listen() {
-	_, err := j.Pool.Exec(CTX, "LISTEN FOR job_updates")
+	conn, err := j.Pool.Acquire(CTX)
 	if err != nil {
-		log.Fatal("COuldnt start the listening to the db")
-		return
+		log.Fatal("Could not acquire connection for listening:", err)
 	}
+	defer conn.Release()
+	_, err = conn.Exec(CTX, "LISTEN job_updates")
+	if err != nil {
+		log.Fatal("Could not start the listening to the db:", err)
+	}
+
+	log.Println("Started listening for job_updates...")
+
 	for {
 
-		notification, err := j.Pool.WaitForNotification(CTX)
+		notification, err := conn.Conn().WaitForNotification(CTX)
+		log.Print("new job updated")
 		if err != nil {
 			log.Println("Listening error:", err)
-			continue
+			return
 		}
+
 		ServerSendChan <- notification.Payload
-
 	}
-
 }
 
 // fetcher

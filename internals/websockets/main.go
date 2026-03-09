@@ -1,5 +1,0 @@
-package websockets
-
-func main() {
-
-}

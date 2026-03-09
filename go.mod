@@ -1,4 +1,4 @@
-module scraper
+module github.com/steel77-7/Web-Swab
 
 go 1.24.0
 
@@ -6,7 +6,9 @@ require (
 	github.com/caarlos0/env/v11 v11.4.0
 	github.com/coder/websocket v1.8.14
 	github.com/gin-gonic/gin v1.11.0
+	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.8.0
+	github.com/joho/godotenv v1.5.1
 )
 
 require (

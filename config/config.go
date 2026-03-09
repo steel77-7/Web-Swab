@@ -1,23 +1,20 @@
 package config
 
 import (
-	"go/types"
 	"log"
 
 	"github.com/caarlos0/env/v11"
+	"github.com/steel77-7/Web-Swab/internals/types"
 )
 
 func LoadConfig() *types.Config {
+	log.Print("IT it woirking ???")
 	var cfg types.Config
-	//var redisCfg RedisConfig
-
 	if err := env.Parse(&cfg); err != nil {
 		log.Fatal(err)
 	}
-
-	// if err := env.Parse(&redisCfg); err != nil {
-	// 	log.Fatal(err)
-	// }
+	log.Print("cfg")
+	log.Print("cfg", cfg.BROKER_URL)
 
 	return &cfg
 }

@@ -4,13 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"log"
-	"scraper/internals/broker"
-	"scraper/internals/types"
 	"sync"
 	"time"
 
 	"github.com/coder/websocket"
 	"github.com/google/uuid"
+	"github.com/steel77-7/Web-Swab/internals/broker"
+	"github.com/steel77-7/Web-Swab/internals/types"
 )
 
 type Message struct {
@@ -49,13 +49,14 @@ func NewServer() (*Server, error) {
 	}, nil
 }
 
-func (s *Server) acceptConnections() {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
+func (s *Server) AcceptConnections() {
+	ctx, _ := context.WithTimeout(context.Background(), time.Second*10)
 	for {
 		newclient := <-AcceptChan
+		log.Print("new socket client")
 		//this will then be registered to the Server
-		id := uuid.New()
-		c := &Client{ID: id.String(), Conn: newclient}
+		id := uuid.New().String()
+		c := &Client{ID: id, Conn: newclient}
 		s.Clients[id] = c
 		go s.readloop(c, ctx)
 
@@ -66,14 +67,12 @@ func (s *Server) readloop(c *Client, ctx context.Context) {
 	defer c.Conn.Close(websocket.StatusNormalClosure, "")
 
 	for {
-		// typ is websocket.MessageText or websocket.MessageBinary
 		_, data, err := c.Conn.Read(ctx)
 		if err != nil {
 			log.Printf("Couldnt read values from client %v: %v", c.ID, err)
-			return // Use return to stop the loop on error
+			return
 		}
 
-		// 'data' is already []byte
 		var msg Message
 		if err := json.Unmarshal(data, &msg); err != nil {
 			log.Printf("Failed to unmarshal: %v", err)
@@ -123,7 +122,7 @@ func (s *Server) send(c *Client, msg Message) error {
 }
 
 // short lived go routines for seindiong data back to the client
-func (s *Server) writer() {
+func (s *Server) Writer() {
 	for {
 		event := <-DBEventChan
 		//then feed thsi to the map
