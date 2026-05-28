@@ -18,11 +18,12 @@ type Config struct {
 
 // processing the jobs
 type Job struct {
-	ID     string    `json:"id"`
-	Status JobStatus `json:"status"`
-	Url    string    `json:"url"`
-	Depth  int       `json:"depth"`
-	UserID string    `json:"userid"`
+	ID        string    `json:"id"`
+	Status    JobStatus `json:"status"`
+	SrcUrl    string    `json:"srcUrl"`
+	TargetUrl string    `json:"targetUrl"`
+	Depth     int       `json:"depth"`
+	UserID    string    `json:"userid"`
 }
 
 // for auth and storing the user
