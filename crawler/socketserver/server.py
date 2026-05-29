@@ -4,6 +4,8 @@ import struct
 import sys
 from enum import Enum
 
+from main import jobhandler
+
 
 class MessageType(Enum):
     CONNECT = 1
@@ -86,7 +88,7 @@ class BrokerClient:
                 # here will be a handler func that will have all the jobs
                 # when the job is finished only then ask for another job
                 self.is_job_present = True
-                # await job_handler(data.payload.decode("UTF-8"))
+                jobhandler(data.payload.decode("UTF-8"))
                 self.is_job_present = False
 
     async def pull_job(self):
