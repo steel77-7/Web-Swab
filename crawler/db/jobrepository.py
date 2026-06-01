@@ -1,9 +1,8 @@
-from sqlalchemy import text
-from sqlmodel import Session, create_engine, text
-
 from caching.caching import Caching
 from db.db import engine
 from models.models import Tbs
+from sqlalchemy import text
+from sqlmodel import Session, create_engine, text
 
 
 class JobRepository:
@@ -23,12 +22,23 @@ class JobRepository:
                 },
             )
 
-    def check_if_visited(self, job):
+    def check_job(self, id):
+        with self.engine.connect() as conn:
+            result = conn.execute(
+                "SELECT  * FROM job WHERE job_id = :id", {"job_id": id}
+            )
+            row = result.first()
+            if row is None:
+                print("newJob")
+                return False
+            return True
+
+    def check_url(self, job):
         # return something with the new and to be searched depth
         # return the data if there is any to be fetched
         with self.engine.connect() as conn:
             result = conn.execute(
-                text('SELECT * FROM url WHERE "targetUrl" = :url'),
+                text("SELECT * FROM url WHERE url = :url"),
                 {"url": job.targetUrl},
             )
             row = result.first()
@@ -53,14 +63,7 @@ class JobRepository:
 
     def insert_tbs(self, data):
         with Session(self.engine) as session:
-            # session.add(tbs_object)
-            # session.flush()
-            # session.execute(
-            #    text("SELECT pg_notify('tbs_updates', :payload)"),
-            #    {"payload": str(tbs_object.id)},
-            # )
 
-            # print("tbss :", data["tbs_entries"])
             for link in data["links"]:
                 print(link.model_dump())
 
@@ -78,6 +81,8 @@ class JobRepository:
                 {"payload": str(data["url"].targetUrl)},
             )
             session.commit()
+    def insert_tbs(self, data):
+        with Session(self.engine) as session:
 
 
 # making a  redis map and then storgin the state in that map ...

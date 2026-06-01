@@ -1,10 +1,14 @@
 import asyncio
+import os
 import socket
 import struct
 import sys
 from enum import Enum
 
+from dotenv import load_dotenv
 from main import jobhandler
+
+load_dotenv()
 
 
 class MessageType(Enum):
@@ -22,13 +26,18 @@ class Message:
 
 
 class BrokerClient:
-    def __init__(self, brokerip, port):
+    def __init__(self):
+        brokerip = os.getenv("BROKER_URL")
+        port = os.getenv("PORT")
         try:
             self.s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         except socket.error as err:
             print("Error while creating the socket", err)
             sys.exit()
+
         try:
+            if brokerip is None or port is None:
+                return
             self.brokerip = socket.gethostbyname(brokerip)
             self.port = port
         except socket.gaierror as err:

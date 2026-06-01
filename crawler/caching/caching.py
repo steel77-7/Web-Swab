@@ -7,8 +7,8 @@ class Caching:
     def __init__(self):
         self.r = redis.Redis(host="localhost", port=6379, db=0)
 
-    def check_if_present(self, data):  # data.payload will already be a dict
-        if self.r.exists(data["targetUrl"]):
+    def check_if_present(self, id):  # data.payload will already be a dict
+        if self.r.exists(id):
             # self.r.hset(data.key, map
             # ping=data)
             return True

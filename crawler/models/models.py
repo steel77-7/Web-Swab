@@ -10,14 +10,15 @@ class Url(SQLModel, table=True):
 
     id: Optional[int] = Field(default=None, primary_key=True)
 
-    srcUrl: Optional[str] = None
+    # srcUrl: Optional[str] = None
 
     # canonical identifier
-    targetUrl: str = Field(unique=True, index=True)
+    url: str = Field(unique=True, index=True)
 
     depth: int
 
     tbs: Optional["Tbs"] = Relationship(back_populates="url_rel")
+    job: Optional["Job"] = Relationship(back_populates="url_id")
 
 
 class Content(SQLModel, table=True):
@@ -32,7 +33,7 @@ class Content(SQLModel, table=True):
     htmlSource: Optional[str] = None
 
     # relation through URL string
-    url: Optional[str] = Field(foreign_key="url.targetUrl", index=True)
+    url: Optional[str] = Field(foreign_key="url.url", index=True)
 
     tbs: Optional["Tbs"] = Relationship(back_populates="content")
 
@@ -43,7 +44,7 @@ class Metadata(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
 
     # relation through URL string
-    url: str = Field(foreign_key="url.targetUrl", index=True)
+    url: str = Field(foreign_key="url.url", index=True)
 
     contentLength: int
     contentType: str
@@ -75,7 +76,7 @@ class Tbs(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
 
     # canonical URL relation
-    url: Optional[str] = Field(foreign_key="url.targetUrl", unique=True, index=True)
+    url: Optional[str] = Field(foreign_key="url.url", unique=True, index=True)
 
     content_id: Optional[int] = Field(
         default=None, foreign_key="content.id", unique=True
@@ -100,6 +101,24 @@ class Tbs(SQLModel, table=True):
     links: List[Links] = Relationship(back_populates="tbs")
 
 
+class Job_db(SQLModel, table=True):
+    __tablename__ = "job"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    job_id: Optional[str]
+    url_id: Optional[int] = Field(default=None, foreign_key="url.id")
+    depth: int = Field(default=0)
+
+
+class Link_log(SQLModel, table=True):
+    __tablename__ = "link_log"
+    id: Optional[int] = Field(default=None, primary_key=True)
+
+    job_id: Optional[int] = Field(derfalt=None, foreign_key="job.id")
+    depth: Optional[int]
+    url_id: Optional[int] = Field(default=None, foreign_key="url.id")
+
+
 class JobStatus(str, Enum):
     PENDING = "pending"
     PROCESSING = "processing"
@@ -108,11 +127,11 @@ class JobStatus(str, Enum):
 
 
 class Job(BaseModel):
-    ID: str
+    Id: str
     Status: JobStatus
     Depth: int
-    SrcUrl: str
-    TargetUrl: str
+
+    Url: str
 
 
 class JobMeta(BaseModel):

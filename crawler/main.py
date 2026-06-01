@@ -8,3 +8,10 @@ def jobhandler(job):
     print(job)
     crawler = Crawler(job)
     crawler.add()
+
+
+def main(job):
+    print("Started........")
+    print(job)
+    crawler = Crawler(job)
+    crawler.add()
