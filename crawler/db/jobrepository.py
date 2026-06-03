@@ -61,28 +61,39 @@ class JobRepository:
                 print("the logic for calculating how many pages it must fetch now")
             return True, row_dict, dif
 
+    # def insert_tbs(self, data):
+    #    with Session(self.engine) as session:
+    #        for link in data["links"]:
+    #            print(link.model_dump())
+    #
+    #        print("Link len :", len(data["links"]))
+    #
+    #        session.add(data["url"])
+    #        session.commit()
+    #
+    #        session.add(data["metadata"])
+    #        session.add(data["content"])
+    #        session.add_all(data["links"])
+    #        session.add(data["tbs_entries"])
+    #        session.execute(
+    #            text("SELECT pg_notify('tbs_updates', :payload)"),
+    #            {"payload": str(data["url"].targetUrl)},
+    #        )
+    #        session.commit()
+
     def insert_tbs(self, data):
         with Session(self.engine) as session:
-
-            for link in data["links"]:
-                print(link.model_dump())
-
-            print("Link len :", len(data["links"]))
-
             session.add(data["url"])
             session.commit()
+            if data["job"] is not None:
+                session.add(data["job"])
+                session.commit()
+            session.add(data["job_log"])
 
             session.add(data["metadata"])
             session.add(data["content"])
             session.add_all(data["links"])
-            session.add(data["tbs_entries"])
-            session.execute(
-                text("SELECT pg_notify('tbs_updates', :payload)"),
-                {"payload": str(data["url"].targetUrl)},
-            )
             session.commit()
-    def insert_tbs(self, data):
-        with Session(self.engine) as session:
 
 
 # making a  redis map and then storgin the state in that map ...
