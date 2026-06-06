@@ -27,8 +27,9 @@ class JobRepository:
 
     def check_job(self, id):
         with self.engine.connect() as conn:
+            print(id)
             result = conn.execute(
-                "SELECT  * FROM job WHERE job_id = :id", {"job_id": id}
+                text("SELECT  * FROM job WHERE job_id = :id"), {"id": id}
             )
             row = result.first()
             if row is None:
@@ -53,33 +54,35 @@ class JobRepository:
             row_dict = dict(row._mapping)
             dif = 0
             res1 = conn.execute(
-                "SELECT id, MAX(depth) , job_id ,url_id  FROM link_log WHERE url_id = :id",
+                text(
+                    "SELECT id, MAX(depth) , job_id ,url_id  FROM link_log WHERE url_id = :id GROUP BY id"
+                ),
                 {"id": row_dict["id"]},
             )
-            row1 = row.first()
+            row1 = res1.first()
+            if row1 is None:
+                return True, row_dict, dif
+
             job_log_mapping = row1._mapping
             dif = job_log_mapping["depth"] - job.Depth
 
             if dif == 0:
                 print("all the data already available")
-                # fetch the related links
-                # make the job entry
-                # make new discovery data and give the new job id to those
-                # + the url id
-                # and then fetch the related urls and return them to the caller function
-                # the caller function will feed them to the broker and thus the cycle continues
+
                 conn.execute(
-                    """
+                    text(
+                        """
                     WITH inserted_job AS (
                             INSERT INTO job (url_id, depth)
                             VALUES (:url_id, :depth)
-                            RETURNING jod_id -- Catches the newly generated ID
+                            RETURNING jod_id
                         )
                     INSERT INTO link_log(id , job_id,depth, url_id)
-                    SELECT  inserted_job.id , depth, url_id  FROM link_log WHERE id = :id ;
+                    SELECT  inserted_job.id , depth, url_id  FROM link_log WHERE id = :id
                     SELECT pg_notify('job_completed' , job_id::text)
                     FROM inserted_log;
-                    """,
+                    """
+                    ),
                     {
                         "id": job_log_mapping["id"],
                         # "job_id": job.Id,
@@ -90,17 +93,19 @@ class JobRepository:
             elif dif > 0:
                 print("There is already enough data available")
                 conn.execute(
-                    """
+                    text(
+                        """
                     WITH inserted_job AS (
                             INSERT INTO job (url_id, depth)
                             VALUES (:url_id, :depth)
-                            RETURNING jod_id -- Catches the newly generated ID
+                            RETURNING jod_id
                         )
                     INSERT INTO link_log( job_id,depth, url_id)
-                    SELECT  inserted_job.id , depth, url_id  FROM link_log WHERE id = :id AND depth<= :depth ;
+                    SELECT  inserted_job.id , depth, url_id  FROM link_log WHERE id = :id AND depth<= :depth
                     SELECT pg_notify('job_completed' , job_id::text)
                     FROM inserted_log;
-                    """,
+                    """
+                    ),
                     {
                         "id": job_log_mapping["id"],
                         # "job_id": job.Id,
@@ -111,15 +116,17 @@ class JobRepository:
             else:
                 print("the logic for calculating how many pages it must fetch now")
                 conn.execute(
-                    """
+                    text(
+                        """
                     WITH inserted_job AS (
                             INSERT INTO job (url_id, depth)
                             VALUES (:url_id, :depth)
-                            RETURNING jod_id -- Catches the newly generated ID
+                            RETURNING jod_id
                         )
                     INSERT INTO link_log(job_id, depth ,url_id )
                     SELECT  inserted_job.id , depth, url_id  FROM link_log WHERE id = :id AND depth<= :depth ;
-                    """,
+                    """
+                    ),
                     {
                         "id": job_log_mapping["id"],
                         # "job_id": job.Id,
@@ -128,16 +135,26 @@ class JobRepository:
                     },
                 )
                 links = conn.execute(
+                    text(
+                        """
+                        WITH target_job AS (
+                            -- Step 1: Find the database integer ID using the string request ID
+                            SELECT id
+                            FROM job
+                            WHERE job_id = :request_job_id
+                            LIMIT 1
+                        ),
+                        job_log AS (
+                            -- Step 2: Use that integer ID to filter link_log
+                            SELECT MIN(depth) AS min_depth, url_id
+                            FROM link_log
+                            WHERE job_id = (SELECT id FROM target_job)
+                            GROUP BY url_id
+                        )
+                        SELECT l.* FROM links l
+                        JOIN job_log j ON l."srcUrl" = j.url_id;
                     """
-                    WITH job_log AS (
-                        SELECT MIN(depth) AS min_depth, url_id
-                        FROM link_log
-                        WHERE job_id = :id
-                        GROUP BY url_id
-                    )
-                    SELECT l.* FROM links l
-                    JOIN job_log j ON l."srcUrl" = j.url_id;
-                    """,
+                    ),
                     {"id": job.Id},
                 )
                 # this will retur n a l;ot of rows

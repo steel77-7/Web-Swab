@@ -18,7 +18,7 @@ class Url(SQLModel, table=True):
     depth: int
 
     tbs: Optional["Tbs"] = Relationship(back_populates="url_rel")
-    job: Optional["Job"] = Relationship(back_populates="url_id")
+    # job: Optional["Job"] = Relationship(back_populates="url_id")
 
 
 class Content(SQLModel, table=True):
@@ -33,7 +33,7 @@ class Content(SQLModel, table=True):
     htmlSource: Optional[str] = None
 
     # relation through URL string
-    url: Optional[str] = Field(foreign_key="url.url", index=True)
+    url_id: Optional[int] = Field(foreign_key="url.id", index=True)
 
     tbs: Optional["Tbs"] = Relationship(back_populates="content")
 
@@ -44,7 +44,7 @@ class Metadata(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
 
     # relation through URL string
-    url: str = Field(foreign_key="url.url", index=True)
+    url_id: str = Field(foreign_key="url.id", index=True)
 
     contentLength: int
     contentType: str
@@ -60,6 +60,8 @@ class Links(SQLModel, table=True):
 
     sourceUrl: Optional[str]
     targetUrl: Optional[str]
+    sourceUrl_id: Optional[int] = Field(foreign_key="url.id", index=True)
+    targetUrl_id: Optional[int] = Field(foreign_key="url.id", index=True)
     anchorText: Optional[str]
     linkType: Optional[str]
 
@@ -114,7 +116,7 @@ class Link_log(SQLModel, table=True):
     __tablename__ = "link_log"
     id: Optional[int] = Field(default=None, primary_key=True)
 
-    job_id: Optional[int] = Field(derfalt=None, foreign_key="job.id")
+    job_id: Optional[int] = Field(default=None, foreign_key="job.id")
     depth: Optional[int]
     url_id: Optional[int] = Field(default=None, foreign_key="url.id")
 

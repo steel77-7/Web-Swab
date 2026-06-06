@@ -10,11 +10,13 @@ run:
 	./bin/main
 
 venv:
-	source crawler/.venv/bin/activate/fish
+	source crawler/.venv/bin/activate.fish
 
 run-crawler:
 	python crawler/test_crawler/main.py
+
 migrate-up:
 	migrate -path migrations -database $(DB_URL) up
+
 migrate-down:
 	migrate -path migrations -database $(DB_URL) down 1

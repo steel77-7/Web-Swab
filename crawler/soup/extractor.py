@@ -3,7 +3,6 @@ from typing import List
 
 import requests
 from bs4 import BeautifulSoup
-
 from models.models import Content, Links, Metadata, Tbs
 
 
@@ -21,18 +20,11 @@ class Extractor(BeautifulSoup):
         if self.fetched:
             self.url_res = response
             self.site_metadata = Metadata(
-                url=url,
                 contentLength=int(response.headers["Content-Length"]),
                 contentType=response.headers["Content-Type"],
                 httpStatusCode=response.status_code,
             )
-            # self.site_metadata.url = url
-            # self.site_metadata.httpStatusCode = response.status_code
-            # self.site_metadata.contentLength = int(response.headers["Content-Length"])
-            # self.site_metadata.contentType = response.headers["Content-Type"]
-            #
-            # hadnling the retry of a  bad request and the politeness
-            # check the db for the previous call ..... if None then do the first call ....... same site diffmachine .... but bomabrding them wont work
+
             self.site_raw_text = self.url_res.text
             self.soup = BeautifulSoup(self.site_raw_text, "html.parser")
             self.content = Content(url=url)
@@ -91,20 +83,7 @@ class Extractor(BeautifulSoup):
         self.content.textContent = main_text
 
     def complete(self):
-        # print("Completeed")
-        # print("this will retur nthe complete data rewquired for the job")
-        # {
 
-        # {
-        #
-        #   url
-        #   list of found urls
-        #
-        #   site data(raw html , metadata, content)
-        #
-        # }
-        #
-        # }
         self.extract_links()
         self.parse_html()
 
@@ -115,5 +94,3 @@ class Extractor(BeautifulSoup):
             "req_metadata": self.site_metadata,
         }
         return return_dict
-
-    # what to do with the links extracted......they will be sent to the broker......
