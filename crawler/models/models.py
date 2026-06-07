@@ -109,7 +109,7 @@ class Job_db(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     job_id: Optional[str]
     url_id: Optional[int] = Field(default=None, foreign_key="url.id")
-    depth: int = Field(default=0)
+    depth: int
 
 
 class Link_log(SQLModel, table=True):
