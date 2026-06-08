@@ -1,11 +1,17 @@
+import copy
+import logging
 from urllib.parse import urljoin
 
 import requests
 from broker.send_to_broker import Broker
 from caching.caching import Caching
 from db.jobrepository import JobRepository
-from models.models import Job, Job_db, JobMeta, JobStatus, Link_log, Links, Tbs, Url
+from models.models import Job, Job_db, JobStatus, Link_log, Tbs, Url
 from soup.extractor import Extractor
+
+logging.basicConfig(
+    level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s"
+)
 
 
 class Crawler:
@@ -29,6 +35,7 @@ class Crawler:
             if job_in_db and not in_redis:
                 self.caching.add_entry(self.job.model_dump())
                 site_data = self.extractor.complete()
+                links = copy.deepcopy(site_data["new_urls"])
                 job_log = Link_log(depth=self.job.Depth, job_id=self.job.Id)
                 data = {
                     "url": Url(url=self.job.Url, depth=0),
@@ -44,7 +51,7 @@ class Crawler:
 
                 # to the broker
                 structured_data = []
-                for l in site_data["new_urls"]:
+                for l in links:
                     base = l.sourceUrl
                     relative = l.targetUrl
                     absolute = urljoin(base, relative)
@@ -64,6 +71,7 @@ class Crawler:
                     site_data = self.extractor.complete()
                     job_tbs = Job_db(job_id=self.job.Id, depth=self.job.Depth)
                     job_log = Link_log(depth=self.job.Depth)
+                    links = copy.deepcopy(site_data["new_urls"])
                     data = {
                         "url": Url(url=self.job.Url, depth=0),
                         "job_log": job_log,
@@ -75,7 +83,7 @@ class Crawler:
                     self.jobRepo.insert_tbs(data)
                     self.caching.remove(self.job.Url)
                     structured_data = []
-                    for l in site_data["new_urls"]:
+                    for l in links:
                         print(l)
                         base = l.sourceUrl
                         relative = l.targetUrl
@@ -103,7 +111,10 @@ class Crawler:
                 print("being scraped for the first time ")
                 return
         except Exception as e:
-            print("Excpetion occured in the add function in the add function ", e)
+            logging.error(
+                f"Excpetion occured in the add function in the add function ${e}",
+                exc_info=True,
+            )
             return
 
     def send_to_broker(self, payload):

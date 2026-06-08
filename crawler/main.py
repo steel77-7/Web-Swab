@@ -19,9 +19,9 @@ def main(job):
 
 main(
     Job(
-        Id="al;ksdghlaksdj",
+        Id="al;ksdghldj",
         Status=JobStatus.DONE,
         Depth=3,
-        Url="https://books.toscrape.com/",
+        Url="https://books.toscrape.com/catalogue/category/books/historical-fiction_4/index.html",
     )
 )
