@@ -119,6 +119,7 @@ class Link_log(SQLModel, table=True):
     job_id: Optional[int] = Field(default=None, foreign_key="job.id")
     depth: Optional[int]
     url_id: Optional[int] = Field(default=None, foreign_key="url.id")
+    root_depth: Optional[int]
 
 
 class JobStatus(str, Enum):

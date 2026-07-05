@@ -63,7 +63,8 @@ class Crawler:
                     )
 
                     structured_data.append(job)
-                    # self.broker.send_to_broker(structured_data)
+
+                # self.broker.send_to_broker(structured_data)
 
             elif not job_in_db and not in_redis:
                 if not url_in_db:
@@ -84,7 +85,6 @@ class Crawler:
                     self.caching.remove(self.job.Url)
                     structured_data = []
                     for l in links:
-                        print(l)
                         base = l.sourceUrl
                         relative = l.targetUrl
                         absolute = urljoin(base, relative)
@@ -99,13 +99,11 @@ class Crawler:
                         # self.broker.send_to_broker(structured_data)
 
                 else:
-                    # if found in the db
-
-                    # the place where the depth magic will takle place
                     print("smae job but mid depth or new depth")
-                    # self.broker.send_to_broker(tbr)
-                    # only one condition for root and mid urls
-                    # a lot of db operations
+                    jobs = self.jobRepo.depth_handler(self.job)
+                    if jobs is None:
+                        print("failed middepth")
+                    # self.broker.send_to_broker(jobs)
 
             elif not job_in_db and in_redis and not url_in_db:
                 print("being scraped for the first time ")
