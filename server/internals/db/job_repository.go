@@ -26,7 +26,7 @@ func (j *JobRepository) StoreJob(job types.Job) error {
 		job.Status,
 		time.Now(),
 		time.Now(),
-		job.UserID,
+	//	job.UserID,
 	)
 
 	if err != nil {
@@ -50,7 +50,7 @@ func (j *JobRepository) FetchJob(id string) error {
 		&job.Status,
 		&job.Url,
 		&job.Depth,
-		&job.UserID,
+	//	&job.UserID,
 	)
 	if err != nil {
 		log.Println("job fetch error:", err)

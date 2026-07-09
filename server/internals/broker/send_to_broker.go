@@ -19,18 +19,21 @@ func PushToBroker(job types.Job) error {
 		Timeout: 10 * time.Millisecond,
 	}
 
-	tbs, _ := json.Marshal(types.JobTbs{
-		Data: job,
-		MetaData: types.Metadata{
-			ID:    job.ID,
-			Url:   config.Conf.SERVER_URL,
-			State: false,
+	tbs, _ := json.Marshal([]types.JobTbs{
+		types.JobTbs{
+			Data: job,
+			MetaData: types.Metadata{
+				ID:    job.ID,
+				Url:   config.Conf.SERVER_URL,
+				State: false,
+			},
 		},
-	})
-	req, _ := http.NewRequest("POST", config.Conf.BROKER_URL+"/ingest", bytes.NewBuffer(tbs))
+	},
+	)
+	req, _ := http.NewRequest("POST", "http://"+config.Conf.BROKER_URL+":"+config.Conf.BROKER_PORT+"/ingest", bytes.NewBuffer(tbs))
 	resp, err := client.Do(req)
 	if err != nil {
-		log.Print("Couldnt send the request to the broker")
+		log.Print("Couldnt send the request to the broker", err)
 		return err
 	}
 	defer resp.Body.Close()

@@ -8,6 +8,7 @@ import (
 )
 
 func LoadConfig() *types.Config {
+
 	log.Print("IT it woirking ???")
 	var cfg types.Config
 	if err := env.Parse(&cfg); err != nil {

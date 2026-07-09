@@ -133,7 +133,6 @@ class Job(BaseModel):
     Id: str
     Status: JobStatus
     Depth: int
-
     Url: str
 
 

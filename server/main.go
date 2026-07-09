@@ -9,20 +9,21 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
 	"github.com/steel77-7/Web-Swab/config"
+	"github.com/steel77-7/Web-Swab/internals/broker"
 	"github.com/steel77-7/Web-Swab/internals/db"
+	"github.com/steel77-7/Web-Swab/internals/types"
 	"github.com/steel77-7/Web-Swab/services/api"
 	"github.com/steel77-7/Web-Swab/websockets"
 )
 
 // will have a start function
 func main() {
-	log.Print("1")
 	godotenv.Load()
 
 	config.Conf = config.LoadConfig()
 	router := api.NewRouter()
 	db.NewDbPoolInit()
-	go db.JobHandler.Listen()
+	//go db.JobHandler.Listen()
 	go func() {
 		server, err := websockets.NewServer()
 		if err != nil {
@@ -32,9 +33,18 @@ func main() {
 		go server.AcceptConnections()
 		go server.Writer()
 	}()
+	//::testing
+	job := types.Job{
+		ID:     "sdfasdfasd",
+		Status: types.JobStatus("pending"),
+		Url:    "https://books.toscrape.com/",
+		Depth:  4,
+	}
+	broker.PushToBroker(job)
+	//::testing
 	router.Use(gin.Recovery())
 	server := &http.Server{
-		Addr:           ":" + fmt.Sprint(9000),
+		Addr:           ":" + fmt.Sprint(7000),
 		Handler:        router,
 		ReadTimeout:    5 * time.Second,
 		WriteTimeout:   5 * time.Second,

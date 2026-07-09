@@ -24,7 +24,7 @@ class Crawler:
 
         self.job = job
         self.tbs_job = Job_db()
-        self.broker = Broker("")
+        self.broker = Broker(conf.broker_url)
         # print("JOB", self.tbs.url.model_dump())
 
     def add(self):

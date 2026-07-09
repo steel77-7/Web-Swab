@@ -18,6 +18,7 @@ func Home(c *gin.Context) { //  / route
 }
 
 // make a middleware to authenticate this request
+
 func Ingest(c *gin.Context) { // ingest route
 	api_key := c.Request.Header["key"]
 	user_id := c.Request.Header["user"]

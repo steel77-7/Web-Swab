@@ -1,3 +1,6 @@
+//this file will be used in the final version
+// rn raw http calls will be used to enter data into the server
+
 package websockets
 
 import (

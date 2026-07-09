@@ -10,9 +10,11 @@ const (
 )
 
 type Config struct {
-	DB_URI     string `env:"DB_URI,required"`
-	BROKER_URL string `env:"BROKER_URL,required"`
-	CLIENT_URL string `env:"CLIENT_URL"`
+	DB_URI      string `env:"DB_URI,required"`
+	BROKER_URL  string `env:"BROKER_URL,required"`
+	BROKER_PORT string `env:"BROKER_PORT,required"`
+
+	//	CLIENT_URL string `env:"CLIENT_URL"`
 	SERVER_URL string `env:"SERVER_URL"`
 }
 
@@ -21,9 +23,8 @@ type Job struct {
 	ID     string    `json:"id"`
 	Status JobStatus `json:"status"`
 	//	SrcUrl    string    `json:"srcUrl"`
-	Url    string `json:"Url"`
-	Depth  int    `json:"depth"`
-	UserID string `json:"userid"`
+	Url   string `json:"Url"`
+	Depth int    `json:"depth"`
 }
 
 // for auth and storing the user
