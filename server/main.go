@@ -37,7 +37,7 @@ func main() {
 	job := types.Job{
 		ID:     "sdfasdfasd",
 		Status: types.JobStatus("pending"),
-		Url:    "https://books.toscrape.com/",
+		Url:    "https://books.toscrape.com/catalogue/category/books/sports-and-games_17/index.html",
 		Depth:  4,
 	}
 	broker.PushToBroker(job)

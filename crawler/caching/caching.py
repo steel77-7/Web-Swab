@@ -20,7 +20,7 @@ class Caching:
             return
         json_data = json.dumps(data)
         print(json_data)
-        self.r.set(data["Url"], json_data)
+        self.r.set(data["url"], json_data)
 
     def remove(self, key):
         self.r.delete(key)

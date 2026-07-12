@@ -23,7 +23,7 @@ type Job struct {
 	ID     string    `json:"id"`
 	Status JobStatus `json:"status"`
 	//	SrcUrl    string    `json:"srcUrl"`
-	Url   string `json:"Url"`
+	Url   string `json:"url"`
 	Depth int    `json:"depth"`
 }
 
@@ -51,7 +51,7 @@ type Metadata struct {
 }
 
 type JobTbs struct {
-	Data     Job      `json:"job"`
+	Data     Job      `json:"data"`
 	MetaData Metadata `json:"metadata"`
 }
 

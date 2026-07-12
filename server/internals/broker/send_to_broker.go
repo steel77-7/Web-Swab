@@ -30,6 +30,7 @@ func PushToBroker(job types.Job) error {
 		},
 	},
 	)
+	log.Print("Data to be sent :", string(tbs))
 	req, _ := http.NewRequest("POST", "http://"+config.Conf.BROKER_URL+":"+config.Conf.BROKER_PORT+"/ingest", bytes.NewBuffer(tbs))
 	resp, err := client.Do(req)
 	if err != nil {

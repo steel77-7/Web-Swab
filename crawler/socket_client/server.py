@@ -176,11 +176,6 @@ class JobInfo:
     data: Job
 
 
-# ============================================================
-# CLIENT
-# ============================================================
-
-
 class BrokerClient:
     def __init__(self):
 
@@ -200,22 +195,24 @@ class BrokerClient:
 
         self.sock.connect((conf.broker_url, conf.broker_tcp_port))
         self.brokeruri = conf.broker_url + str(conf.broker_http_port)
-        print("Connected to broker.")
 
         payload = conf.broker_secret.encode()
 
-        connect = Message(
+        connect_msg = Message(
             length=len(payload) + 1,
             msg_type=MessageType.CONNECT,
             payload=payload,
         )
 
-        self.send(connect)
+        self.send(connect_msg)
+        print("Connected to broker.")
 
-        asyncio.create_task(self.reader())
-        asyncio.create_task(self.writer())
-        asyncio.create_task(self.pull_loop())
-        asyncio.create_task(self.heartbeat_loop())
+        await asyncio.gather(
+            self.reader(),
+            self.writer(),
+            self.pull_loop(),
+            self.heartbeat_loop(),
+        )
 
     # --------------------------------------------------------
 

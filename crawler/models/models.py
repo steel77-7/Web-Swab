@@ -130,18 +130,18 @@ class JobStatus(str, Enum):
 
 
 class Job(BaseModel):
-    Id: str
-    Status: JobStatus
-    Depth: int
-    Url: str
+    id: str
+    status: JobStatus
+    depth: int
+    url: str
 
 
 class JobMeta(BaseModel):
-    ID: str
-    Url: str
-    State: bool
+    id: str
+    url: str
+    state: bool
 
 
 class JobTbs(BaseModel):
-    Data: List[Job]
-    MetaData: JobMeta
+    data: Job
+    metadata: JobMeta

@@ -15,12 +15,10 @@ class Config:
     db_uri: str
 
 
-conf = None
-
-
 def load_config():
-    global conf
-    conf = Config(
+    load_dotenv()
+
+    return Config(
         broker_url=os.getenv("BROKER_URL", "127.0.0.1"),
         broker_http_port=int(os.getenv("BROKER_HTTP_PORT", "8000")),
         broker_tcp_port=int(os.getenv("BROKER_TCP_PORT", "8000")),
@@ -29,3 +27,7 @@ def load_config():
             "DB_URI", "postgresql://postgres:postgres@localhost/crawler?sslmode=disable"
         ),
     )
+    print("conf: ", conf)
+
+
+conf = load_config()

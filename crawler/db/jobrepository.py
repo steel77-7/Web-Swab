@@ -69,9 +69,9 @@ class JobRepository:
                     RETURNING *;
                     """),
                     {
-                        "url": job.Url,
-                        "job_id": job.ID,
-                        "depth": job.Depth,
+                        "url": job.url,
+                        "job_id": job.id,
+                        "depth": job.depth,
                     },
                 ).fetchall()
                 if len(res) == 0:
@@ -89,10 +89,10 @@ class JobRepository:
                     relative = l.targetUrl
                     absolute = urljoin(base, relative)
                     job = Job(
-                        Id=job.Id,
-                        Status=JobStatus.PENDING,
-                        Depth=job.Depth - 1,
-                        Url=absolute,
+                        id=job.id,
+                        status=JobStatus.PENDING,
+                        depth=job.depth - 1,
+                        url=absolute,
                     )
                     jobs.append(job)
                 return jobs
@@ -121,7 +121,7 @@ class JobRepository:
             with self.engine.connect() as conn:
                 result = conn.execute(
                     text("SELECT * FROM url WHERE url = :url"),
-                    {"url": job.Url},
+                    {"url": job.url},
                 )
                 row = result.first()
 
@@ -164,9 +164,9 @@ class JobRepository:
                 job_log_mapping = row1._mapping
                 print(job_log_mapping)
                 job_mapping = row2._mapping
-                dif = job_mapping["depth"] - job.Depth
+                dif = job_mapping["depth"] - job.depth
                 print("diff :", dif)
-                max_depth = job_mapping["depth"] + job.Depth
+                max_depth = job_mapping["depth"] + job.depth
                 if dif == 0:
                     print("all the data already available")
                     hey = conn.execute(
@@ -175,6 +175,7 @@ class JobRepository:
                             WITH inserted_job AS (
                                        INSERT INTO job (job_id, url_id, depth)
                                        VALUES (:job_id, :url_id, :depth)
+                                       ON CONFLICT (url_id) DO NOTHING
                                        RETURNING id ,depth
                                    )
                                    INSERT INTO link_log (job_id, root_depth,depth, url_id)
@@ -187,7 +188,7 @@ class JobRepository:
                         ),
                         {
                             "id": job_log_mapping["job_id"],
-                            "job_id": job.Id,
+                            "job_id": job.id,
                             "url_id": row_dict["id"],
                             "depth": job.Depth,
                         },
@@ -199,7 +200,7 @@ class JobRepository:
                         text(
                             "SELECT pg_notify('job_completed', CAST(:job_id AS TEXT));"
                         ),
-                        {"job_id": job.Id},
+                        {"job_id": job.id},
                     )
                     conn.commit()
                     rows = conn.execute(
@@ -229,6 +230,7 @@ class JobRepository:
                             WITH inserted_job AS (
                                 INSERT INTO job (job_id, url_id, depth)
                                 VALUES (:job_id, :url_id, :depth)
+                                ON CONFLICT (url_id) DO NOTHING
                                 RETURNING id,depth
                             )
                             INSERT INTO link_log (depth,root_depth, job_id, url_id)
@@ -241,9 +243,9 @@ class JobRepository:
                         ),
                         {
                             "id": job_log_mapping["job_id"],
-                            "job_id": job.Id,
+                            "job_id": job.id,
                             "url_id": row_dict["id"],
-                            "depth": job.Depth,
+                            "depth": job.depth,
                             "root_depth": job_mapping["depth"],
                             "dif": dif,
                             "first_log_depth": job_log_mapping["depth"],
@@ -253,7 +255,7 @@ class JobRepository:
                         text(
                             "SELECT pg_notify('job_completed', CAST(:job_id AS TEXT));"
                         ),
-                        {"job_id": job.Id},
+                        {"job_id": job.id},
                     )
                     conn.commit()
                     rows = conn.execute(
@@ -283,6 +285,7 @@ class JobRepository:
                             WITH inserted_job AS (
                                 INSERT INTO job (job_id, url_id, depth)
                                 VALUES (:job_id, :url_id, :depth)
+                                ON CONFLICT (url_id) DO NOTHING
                                 RETURNING id, depth
                             )
                             INSERT INTO link_log (root_depth, depth, job_id, url_id)
@@ -299,9 +302,9 @@ class JobRepository:
                         ),
                         {
                             "id": job_log_mapping["job_id"],
-                            "job_id": job.Id,
+                            "job_id": job.id,
                             "url_id": row_dict["id"],
-                            "depth": job.Depth,
+                            "depth": job.depth,
                             "job_log_depth": job_log_mapping["depth"],
                         },
                     )
@@ -327,7 +330,7 @@ class JobRepository:
                             JOIN job_log j ON l."sourceUrl_id" = j.url_id;
                             """
                         ),
-                        {"request_job_id": job.Id},
+                        {"request_job_id": job.id},
                     )
                     conn.commit()
 
@@ -338,10 +341,10 @@ class JobRepository:
                         relative = l.targetUrl
                         absolute = urljoin(base, relative)
                         job = Job(
-                            Id=job.Id,
-                            Status=JobStatus.PENDING,
-                            Depth=job.Depth - 1,
-                            Url=absolute,
+                            id=job.id,
+                            status=JobStatus.PENDING,
+                            depth=job.depth - 1,
+                            url=absolute,
                         )
                         tbr.append(job)
                     print("THE LENGHT OF LINKS", len(tbr))

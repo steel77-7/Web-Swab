@@ -1,9 +1,9 @@
 import asyncio
-from socketserver.server import BrokerClient
 
-from conf.conf import load_config
+# from conf.conf import conf, load_config
 from db.db import runDB
 from dotenv import load_dotenv
+from socket_client.server import BrokerClient
 
 # def main(job):
 #     print("Started........")
@@ -23,8 +23,10 @@ from dotenv import load_dotenv
 
 
 def main():
-    load_dotenv()
-    load_config()
-    runDB()
+
+    # runDB()
     client = BrokerClient()
     asyncio.run(client.connect())
+
+
+main()
