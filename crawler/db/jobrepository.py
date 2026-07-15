@@ -3,7 +3,7 @@ from urllib.parse import urljoin
 
 from caching.caching import Caching
 from db.db import engine
-from models.models import Job, JobStatus, Url
+from models.models import Job, JobStatus, Links, Url
 from sqlalchemy import select, text
 from sqlmodel import Session
 
@@ -80,7 +80,7 @@ class JobRepository:
                 SELECT * FROM links WHERE "sourceUrl_id" =:url_id
                 """),
                     {"url_id": res[0]["url_id"]},
-                ).fetchall()
+                ).all()
                 jobs = []
                 links = self.check_if_visited(links)
                 if job.depth > 1:
@@ -123,7 +123,7 @@ class JobRepository:
 
     def check_url(self, job):
         try:
-            with self.engine.connect() as conn:
+            with Session(self.engine) as conn:
                 result = conn.execute(
                     text("SELECT * FROM url WHERE url = :url"),
                     {"url": job.url},
@@ -215,7 +215,7 @@ class JobRepository:
                     )
                     print("res")
 
-                    print(hey.fetchall())
+                    print(hey.all())
                     conn.execute(
                         text(
                             "SELECT pg_notify('job_completed', CAST(:job_id AS TEXT));"
@@ -236,7 +236,7 @@ class JobRepository:
                         {
                             "job_id": job_log_mapping["job_id"],
                         },
-                    ).fetchall()
+                    ).all()
 
                     print("Rows found:", len(rows))
 
@@ -308,7 +308,7 @@ class JobRepository:
                         {
                             "job_id": job_log_mapping["job_id"],
                         },
-                    ).fetchall()
+                    ).all()
 
                     print("Rows found:", len(rows))
 
@@ -360,27 +360,49 @@ class JobRepository:
                     print("res: ", hey.fetchall())
                     conn.commit()
 
-                    links = conn.execute(
-                        text(
-                            """
-                            WITH target_job AS (
-                                SELECT id
-                                FROM job
-                                WHERE job_id = :request_job_id
-                                LIMIT 1
-                            ),
-                            job_log AS (
-                                SELECT MIN(depth) AS min_depth, url_id
-                                FROM link_log
-                                WHERE job_id = (SELECT id FROM target_job)  -- Perfectly matches integer types
-                                GROUP BY url_id
-                            )
-                            SELECT l.* FROM links l
-                            JOIN job_log j ON l."sourceUrl_id" = j.url_id;
-                            """
-                        ),
-                        {"request_job_id": job.id},
-                    ).fetchall()
+                    # links = conn.execute(
+                    #     text(
+                    #         """
+                    #         WITH target_job AS (
+                    #             SELECT id
+                    #             FROM job
+                    #             WHERE job_id = :request_job_id
+                    #             LIMIT 1
+                    #         ),
+                    #         job_log AS (
+                    #             SELECT MIN(depth) AS min_depth, url_id
+                    #             FROM link_log
+                    #             WHERE job_id = (SELECT id FROM target_job)  -- Perfectly matches integer types
+                    #             GROUP BY url_id
+                    #         )
+                    #         SELECT l.* FROM links l
+                    #         JOIN job_log j ON l."sourceUrl_id" = j.url_id;
+                    #         """
+                    #     ),
+                    #     {"request_job_id": job.id},
+                    # ).all()
+                    stmt = select(Links).from_statement(
+                        text("""
+                                WITH target_job AS (
+                                    SELECT id
+                                    FROM job
+                                    WHERE job_id = :request_job_id
+                                    LIMIT 1
+                                ),
+                                job_log AS (
+                                    SELECT MIN(depth) AS min_depth, url_id
+                                    FROM link_log
+                                    WHERE job_id = (SELECT id FROM target_job)
+                                    GROUP BY url_id
+                                )
+                                SELECT l.*
+                                FROM links l
+                                JOIN job_log j
+                                    ON l."sourceUrl_id" = j.url_id
+                            """)
+                    )
+
+                    links = conn.scalars(stmt, {"request_job_id": job.id}).all()
                     conn.commit()
 
                     # this will retur n a l;ot of rows
@@ -411,7 +433,7 @@ class JobRepository:
                         self.complete(job.id)
                     print("THE LENGHT OF LINKS", len(tbr))
                     return True, tbr, dif
-                return True, row_dict, dif
+                return True, None, dif
         except Exception as e:
             print("Exception in the check url:", e)
             raise Exception("in check url :", e)

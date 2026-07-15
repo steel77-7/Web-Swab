@@ -35,7 +35,7 @@ func main() {
 	}()
 	//::testing
 	job := types.Job{
-		ID:     "sdfasssdfasfd",
+		ID:     "sdfadssdfasfd",
 		Status: types.JobStatus("pending"),
 		Url:    "https://books.toscrape.com/catalogue/category/books/sports-and-games_17/index.html",
 		Depth:  2,

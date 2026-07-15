@@ -36,7 +36,8 @@ class Crawler:
             job_in_db, duplicate = self.jobRepo.check_job(self.job)
             if duplicate:
                 return
-            url_in_db, tbr, depth = self.jobRepo.check_url(self.job)
+            url_in_db, broker_links, depth = self.jobRepo.check_url(self.job)
+
             if job_in_db and not in_redis:
                 # either a depth continuation or duplicate job
                 self.extractor = Extractor(self.url)
@@ -118,6 +119,9 @@ class Crawler:
 
                 else:
                     print("same url but new depth or mid depth")
+                    if broker_links is not None:
+                        self.broker.send_to_broker(broker_links, self.id)
+                        return
                     jobs = self.jobRepo.depth_handler(self.job)
                     if jobs is None:
                         print("failed middepth")
