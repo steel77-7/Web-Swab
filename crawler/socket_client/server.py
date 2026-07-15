@@ -131,6 +131,7 @@ import json
 import os
 import socket
 import struct
+import sys
 import time
 from dataclasses import dataclass
 from enum import IntEnum
@@ -410,6 +411,8 @@ class BrokerClient:
         )
 
         self.sock.sendall(header + msg.payload)
+        # if msg.msg_type == MessageType.TACK:
+        #     sys.exit(0)
 
     # --------------------------------------------------------
 

@@ -3,8 +3,8 @@ from urllib.parse import urljoin
 
 from caching.caching import Caching
 from db.db import engine
-from models.models import Job, JobStatus
-from sqlalchemy import text
+from models.models import Job, JobStatus, Url
+from sqlalchemy import select, text
 from sqlmodel import Session
 
 
@@ -33,40 +33,38 @@ class JobRepository:
                 #
                 res = conn.execute(
                     text("""
-                    WITH job_data AS (
-                        INSERT INTO job (job_id, url_id, depth)
-                        SELECT :job_id, u.id, :depth
-                        FROM url u
-                        WHERE u.url = :url
-                        ON CONFLICT (job_id) DO NOTHING
-                        RETURNING id, depth
-                    ),
-                    existing_job AS (
-                        SELECT id, depth
-                        FROM job
-                        WHERE job_id = :job_id
-                    ),
-                    final_job AS (
-                        SELECT * FROM job_data
-                        UNION ALL
-                        SELECT * FROM existing_job
-                        LIMIT 1
-                    ),
-                    url_data AS (
-                        SELECT id
-                        FROM url
-                        WHERE url = :url
-                    )
-                    INSERT INTO link_log (job_id, root_depth, url_id, depth)
-                    SELECT
-                        fj.id,
-                        fj.depth,
-                        u.id,
-                        :depth
-                    FROM final_job fj
-                    JOIN url_data u ON TRUE
-                    ON CONFLICT (url_id, job_id, depth) DO NOTHING
-                    RETURNING *;
+                        WITH url_data AS (
+                            SELECT id
+                            FROM url
+                            WHERE url = :url
+                        ),
+                        job_data AS (
+                            INSERT INTO job (job_id, url_id, depth)
+                            SELECT :job_id, id, :depth
+                            FROM url_data
+                            ON CONFLICT (job_id) DO NOTHING
+                            RETURNING id, depth
+                        ),
+                        final_job AS (
+                            SELECT * FROM job_data
+
+                            UNION ALL
+
+                            SELECT id, depth
+                            FROM job
+                            WHERE job_id = :job_id
+                              AND NOT EXISTS (SELECT 1 FROM job_data)
+                        )
+                        INSERT INTO link_log (job_id, root_depth, url_id, depth)
+                        SELECT
+                            fj.id,
+                            fj.depth,
+                            u.id,
+                            :depth
+                        FROM final_job fj
+                        CROSS JOIN url_data u
+                        ON CONFLICT (url_id, job_id, depth) DO NOTHING
+                        RETURNING *;
                     """),
                     {
                         "url": job.url,
@@ -84,37 +82,44 @@ class JobRepository:
                     {"url_id": res[0]["url_id"]},
                 ).fetchall()
                 jobs = []
-                for l in links:
-                    base = l.sourceUrl
-                    relative = l.targetUrl
-                    absolute = urljoin(base, relative)
-                    job = Job(
-                        id=job.id,
-                        status=JobStatus.PENDING,
-                        depth=job.depth - 1,
-                        url=absolute,
-                    )
-                    jobs.append(job)
+                links = self.check_if_visited(links)
+                if job.depth > 1:
+                    for l in links:
+                        # base = l.sourceUrl
+                        # relative = l.targetUrl
+                        # absolute = urljoin(base, relative)
+                        job = Job(
+                            id=job.id,
+                            status=JobStatus.PENDING,
+                            depth=job.depth - 1,
+                            url=l.targetUrl,
+                        )
+                        jobs.append(job)
+                else:
+                    self.complete(job.id)
                 return jobs
                 # now there is no need for refecthing the data
 
         except Exception as e:
             print(e)
 
-    def check_job(self, id):
+    def check_job(self, job):
         try:
             with self.engine.connect() as conn:
                 result = conn.execute(
-                    text("SELECT  * FROM job WHERE job_id = :id"), {"id": id}
+                    text("SELECT  * FROM job WHERE job_id = :id"), {"id": job.id}
                 )
-                row = result.first()
+                row = result.fetchone()
+                duplicate = False
                 if row is None:
                     print("newJob")
-                    return False
-                return True
+                    return False, duplicate
+                if row.depth == job.depth:
+                    duplicate = True
+                return True, duplicate
         except Exception as e:
             print("Exception in the Check job in the job repo: ", e)
-            return None
+            return None, None
 
     def check_url(self, job):
         try:
@@ -173,24 +178,39 @@ class JobRepository:
                         text(
                             """
                             WITH inserted_job AS (
-                                       INSERT INTO job (job_id, url_id, depth)
-                                       VALUES (:job_id, :url_id, :depth)
-                                       ON CONFLICT (url_id) DO NOTHING
-                                       RETURNING id ,depth
-                                   )
-                                   INSERT INTO link_log (job_id, root_depth,depth, url_id)
-                                   SELECT ij.id,ij.depth, ll.depth, ll.url_id
-                                   FROM link_log ll
-                                   CROSS JOIN inserted_job ij
-                                   WHERE ll.job_id = :id
-                                   RETURNING *;
+                                INSERT INTO job (job_id, url_id, depth)
+                                VALUES (:job_id, :url_id, :depth)
+                                ON CONFLICT (job_id) DO NOTHING
+                                RETURNING id, depth
+                            ),
+                            job_row AS (
+                                SELECT id, depth
+                                FROM inserted_job
+
+                                UNION ALL
+
+                                SELECT id, depth
+                                FROM job
+                                WHERE job_id = :job_id
+                                  AND NOT EXISTS (SELECT 1 FROM inserted_job)
+                            )
+                            INSERT INTO link_log (job_id, root_depth, depth, url_id)
+                            SELECT
+                                jr.id,
+                                jr.depth,
+                                ll.depth,
+                                ll.url_id
+                            FROM link_log ll
+                            CROSS JOIN job_row jr
+                            WHERE ll.job_id = :id
+                            RETURNING *;
                             """
                         ),
                         {
                             "id": job_log_mapping["job_id"],
                             "job_id": job.id,
                             "url_id": row_dict["id"],
-                            "depth": job.Depth,
+                            "depth": job.depth,
                         },
                     )
                     print("res")
@@ -230,14 +250,31 @@ class JobRepository:
                             WITH inserted_job AS (
                                 INSERT INTO job (job_id, url_id, depth)
                                 VALUES (:job_id, :url_id, :depth)
-                                ON CONFLICT (url_id) DO NOTHING
-                                RETURNING id,depth
+                                ON CONFLICT (job_id) DO NOTHING
+                                RETURNING id, depth
+                            ),
+                            job_row AS (
+                                SELECT id, depth
+                                FROM inserted_job
+
+                                UNION ALL
+
+                                SELECT id, depth
+                                FROM job
+                                WHERE url_id = :url_id
+                                  AND NOT EXISTS (SELECT 1 FROM inserted_job)
                             )
-                            INSERT INTO link_log (depth,root_depth, job_id, url_id)
-                            SELECT ll.depth,ij.depth, ij.id, ll.url_id
+                            INSERT INTO link_log (depth, root_depth, job_id, url_id)
+                            SELECT
+                                ll.depth,
+                                jr.depth,
+                                jr.id,
+                                ll.url_id
                             FROM link_log ll
-                            CROSS JOIN inserted_job ij
-                            WHERE ll.job_id = :id AND ll.depth < ij.depth AND ll.depth >= :first_log_depth
+                            CROSS JOIN job_row jr
+                            WHERE ll.job_id = :id
+                              AND ll.depth < jr.depth
+                              AND ll.depth >= :first_log_depth
                             RETURNING *;
                             """
                         ),
@@ -285,18 +322,30 @@ class JobRepository:
                             WITH inserted_job AS (
                                 INSERT INTO job (job_id, url_id, depth)
                                 VALUES (:job_id, :url_id, :depth)
-                                ON CONFLICT (url_id) DO NOTHING
+                                ON CONFLICT (job_id) DO NOTHING
                                 RETURNING id, depth
+                            ),
+                            job_row AS (
+                                SELECT id, depth
+                                FROM inserted_job
+
+                                UNION ALL
+
+                                SELECT id, depth
+                                FROM job
+                                WHERE url_id = :url_id
+                                  AND NOT EXISTS (SELECT 1 FROM inserted_job)
                             )
                             INSERT INTO link_log (root_depth, depth, job_id, url_id)
                             SELECT
-                                ij.depth,
+                                jr.depth,
                                 ll.depth,
-                                ij.id,
+                                jr.id,
                                 ll.url_id
                             FROM link_log ll
-                            CROSS JOIN inserted_job ij
-                            WHERE ll.job_id = :id AND ll.depth <  ij.depth-1
+                            CROSS JOIN job_row jr
+                            WHERE ll.job_id = :id
+                              AND ll.depth < jr.depth - 1
                             RETURNING *;
                             """
                         ),
@@ -331,22 +380,35 @@ class JobRepository:
                             """
                         ),
                         {"request_job_id": job.id},
-                    )
+                    ).fetchall()
                     conn.commit()
 
                     # this will retur n a l;ot of rows
                     tbr = []
-                    for l in links:
-                        base = l.sourceUrl
-                        relative = l.targetUrl
-                        absolute = urljoin(base, relative)
-                        job = Job(
-                            id=job.id,
-                            status=JobStatus.PENDING,
-                            depth=job.depth - 1,
-                            url=absolute,
-                        )
-                        tbr.append(job)
+                    links = self.check_if_visited(links)
+
+                    # for l in links:
+                    #     base = l.sourceUrl
+                    #     relative = l.targetUrl
+                    #     absolute = urljoin(base, relative)
+                    #     job = Job(
+                    #         id=job.id,
+                    #         status=JobStatus.PENDING,
+                    #         depth=job.depth - 1,
+                    #         url=absolute,
+                    #     )
+                    #     tbr.append(job)
+                    if job.depth > 1:
+                        for l in links:
+                            job = Job(
+                                id=job.id,
+                                status=JobStatus.PENDING,
+                                depth=job.depth - 1,
+                                url=l.targetUrl,
+                            )
+                            tbr.append(job)
+                    else:
+                        self.complete(job.id)
                     print("THE LENGHT OF LINKS", len(tbr))
                     return True, tbr, dif
                 return True, row_dict, dif
@@ -357,34 +419,93 @@ class JobRepository:
     def insert_tbs(self, data):
         with Session(self.engine) as session:
             try:
-                session.add(data["url"])
-                session.commit()
+                # 1. Check if the URL already exists using its unique string attribute (assuming .url)
+                existing_url = session.scalars(
+                    select(Url).filter_by(url=data["url"].url)
+                ).first()
+
+                if existing_url:
+                    # Use the undisturbed, existing DB entry (brings the actual id with it)
+                    data["url"] = existing_url
+                else:
+                    # Brand new URL, insert it safely
+                    session.add(data["url"])
+                    session.flush()  # Flush gives us the new data["url"].id without committing yet
+
+                # 2. Handle the job logic
                 if data["job"] is not None:
                     data["job"].url_id = data["url"].id
                     session.add(data["job"])
-                    session.commit()
+                    session.flush()  # Populates data["job"].id
+
                     data["job_log"].job_id = data["job"].id
                     data["job_log"].root_depth = data["job"].depth
                     data["job_log"].depth = data["job"].depth - data["job_log"].depth
-
                 else:
                     res = session.execute(
                         text("SELECT * FROM job WHERE job_id = :id"),
                         {"id": data["job_log"].job_id},
                     )
                     row = res.first()
+
                     data["job_log"].job_id = row.id
                     data["job_log"].root_depth = row.depth
                     data["job_log"].depth = row.depth - data["job_log"].depth
 
+                # 3. Attach the URL IDs to dependent models and save everything
                 data["job_log"].url_id = data["url"].id
                 data["metadata"].url_id = data["url"].id
                 data["content"].url_id = data["url"].id
+
                 session.add(data["job_log"])
                 session.add(data["metadata"])
                 session.add(data["content"])
                 session.add_all(data["links"])
+
                 session.commit()
+
             except Exception as e:
+                session.rollback()  # Good practice to explicitly rollback on failure
                 print("Error in the insert tbs in job repository :", e)
                 return
+
+    def check_if_visited(self, links):
+        with Session(self.engine) as session:
+            # 1. Normalize all target URLs to absolute paths
+            for link in links:
+                if link.sourceUrl and link.targetUrl:
+                    link.targetUrl = urljoin(link.sourceUrl, link.targetUrl)
+
+            # 2. Extract the resolved unique target strings for the DB query
+            incoming_urls = {link.targetUrl for link in links if link.targetUrl}
+
+            if not incoming_urls:
+                return []
+
+            # 3. Query the database to find which ones already exist
+            stmt = select(Url.url).where(Url.__table__.c.url.in_(incoming_urls))
+            existing_urls = set(session.scalars(stmt).all())
+
+            # 4. Filter out items in DB AND clear duplicates within the batch itself
+            unvisited_objects = []
+            seen_unvisited = set()  # Tracks URLs we have already decided to process
+
+            for link in links:
+                url = link.targetUrl
+                # It must not be in the DB AND must not have been seen earlier in this loop
+                if url and (url not in existing_urls) and (url not in seen_unvisited):
+                    unvisited_objects.append(link)
+                    seen_unvisited.add(url)  # Block subsequent duplicates
+
+            return unvisited_objects
+
+    def complete(self, id):
+        with self.engine.connect() as conn:
+            conn.execute(
+                text("""
+                UPDATE  job
+                SET status = "done"
+                WHERE job_id =:job_id
+                """),
+                {"job_id": id},
+            )

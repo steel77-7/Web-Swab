@@ -19,7 +19,8 @@ class Crawler:
     def __init__(self, job: Job):
         self.id = job.id
         print("1")
-        self.extractor = Extractor(job.url)
+        self.url = job.url
+        # self.extractor = Extractor(job.url)
         self.caching = Caching()
         self.jobRepo = JobRepository()
         self.tbs = Tbs()
@@ -32,9 +33,13 @@ class Crawler:
     def add(self):
         try:
             in_redis = self.caching.check_if_present(self.job.url)
-            job_in_db = self.jobRepo.check_job(self.job.id)
+            job_in_db, duplicate = self.jobRepo.check_job(self.job)
+            if duplicate:
+                return
             url_in_db, tbr, depth = self.jobRepo.check_url(self.job)
             if job_in_db and not in_redis:
+                # either a depth continuation or duplicate job
+                self.extractor = Extractor(self.url)
                 self.caching.add_entry(self.job.model_dump())
                 site_data = self.extractor.complete()
                 links = copy.deepcopy(site_data["new_urls"])
@@ -54,23 +59,28 @@ class Crawler:
                 # to the broker
                 structured_data = []
                 print("Links recovered :\t ", len(links))
-                for l in links:
-                    base = l.sourceUrl
-                    relative = l.targetUrl
-                    absolute = urljoin(base, relative)
-                    job = Job(
-                        id=self.id,
-                        status=JobStatus.PENDING,
-                        depth=self.job.depth - 1,
-                        url=absolute,
-                    )
+                if self.job.depth > 1:
+                    links = self.jobRepo.check_if_visited(links)
+                    for l in links:
+                        # base = l.sourceUrl
+                        # relative = l.targetUrl
+                        # absolute = urljoin(base, relative)
+                        job = Job(
+                            id=self.id,
+                            status=JobStatus.PENDING,
+                            depth=self.job.depth - 1,
+                            url=l.targetUrl,
+                        )
 
-                    structured_data.append(job)
-
-                self.broker.send_to_broker(structured_data, self.id)
+                        structured_data.append(job)
+                    self.broker.send_to_broker(structured_data, self.id)
+                    # else:
+                    #     self.jobRepo.complete(self.job.id)
 
             elif not job_in_db and not in_redis:
                 if not url_in_db:
+                    # totally new job
+                    self.extractor = Extractor(self.url)
                     self.caching.add_entry(self.job.model_dump())
                     site_data = self.extractor.complete()
                     job_tbs = Job_db(job_id=self.job.id, depth=self.job.depth)
@@ -88,30 +98,33 @@ class Crawler:
                     self.caching.remove(self.job.url)
                     structured_data = []
                     print("Links recovered :\t ", len(links))
+                    if self.job.depth > 1:
+                        links = self.jobRepo.check_if_visited(links)
+                        for l in links:
+                            # base = l.sourceUrl
+                            # relative = l.targetUrl
+                            # absolute = urljoin(base, relative)
+                            job = Job(
+                                id=self.id,
+                                status=JobStatus.PENDING,
+                                depth=self.job.depth - 1,
+                                url=l.targetUrl,
+                            )
 
-                    for l in links:
-                        base = l.sourceUrl
-                        relative = l.targetUrl
-                        absolute = urljoin(base, relative)
-                        job = Job(
-                            id=self.id,
-                            status=JobStatus.PENDING,
-                            depth=self.job.depth - 1,
-                            url=absolute,
-                        )
-
-                        structured_data.append(job)
-                        # self.broker.send_to_broker(structured_data)
+                            structured_data.append(job)
+                        self.broker.send_to_broker(structured_data, self.id)
+                        # else:
+                        #     self.jobRepo.complete(self.job.id)
 
                 else:
-                    print("smae job but mid depth or new depth")
+                    print("same url but new depth or mid depth")
                     jobs = self.jobRepo.depth_handler(self.job)
                     if jobs is None:
                         print("failed middepth")
                     self.broker.send_to_broker(jobs, self.id)
 
             elif not job_in_db and in_redis and not url_in_db:
-                print("being scraped for the first time ")
+                print("being scraped for the first time \n\n\n\n")
                 return
         except Exception as e:
             logging.error(
