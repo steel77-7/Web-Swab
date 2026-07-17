@@ -129,8 +129,9 @@ class Crawler:
                         return
                     print("job", self.job)
                     self.job.id = self.id
+                    # going with  simpler approach for now
                     jobs = self.jobRepo.depth_handler(self.job)
-                    if jobs is None:
+                    if jobs is None or len(jobs) == 0:
                         print("failed middepth")
                         return
                     self.broker.send_to_broker(jobs, self.id)

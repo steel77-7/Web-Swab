@@ -35,10 +35,10 @@ func main() {
 	}()
 	//::testing
 	job := types.Job{
-		ID:     "sdfadssdfasfd",
+		ID:     "test2",
 		Status: types.JobStatus("pending"),
-		Url:    "https://books.toscrape.com/",
-		Depth:  3,
+		Url:    "https://books.toscrape.com/catalogue/maybe-something-beautiful-how-art-transformed-a-neighborhood_386/index.html",
+		Depth:  2,
 	}
 	broker.PushToBroker(job)
 	//::testing
