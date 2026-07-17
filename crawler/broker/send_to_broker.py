@@ -1,7 +1,9 @@
 # sending to the broker
 # handling the sending errors
+from typing import List
+
 import requests
-from models.models import JobMeta, JobTbs
+from models.models import Job, JobMeta, JobTbs
 
 
 class Broker:
@@ -9,10 +11,11 @@ class Broker:
         # fecthing all the info to connect to the broker
         self.locator_uri = broker_uri
 
-    def send_to_broker(self, data, id):
+    def send_to_broker(self, data: List[Job], id):
         try:
             final = []
             print("sending to the broker")
+            print(data)
             for d in data:
                 url = ""
                 state = True

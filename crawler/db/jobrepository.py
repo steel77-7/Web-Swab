@@ -25,12 +25,12 @@ class JobRepository:
                 },
             )
 
-    def depth_handler(self, job):
+    def depth_handler(self, job: Job) -> List[Job] | None:
         try:
-            with self.engine.connect() as conn:
+            with Session(self.engine) as conn:
                 print("depth handler")
                 # i will create if it does not exist
-                #
+                print("job:", job)
                 res = conn.execute(
                     text("""
                         WITH url_data AS (
@@ -63,7 +63,6 @@ class JobRepository:
                             :depth
                         FROM final_job fj
                         CROSS JOIN url_data u
-                        ON CONFLICT (url_id, job_id, depth) DO NOTHING
                         RETURNING *;
                     """),
                     {
@@ -71,37 +70,49 @@ class JobRepository:
                         "job_id": job.id,
                         "depth": job.depth,
                     },
-                ).fetchall()
+                ).all()
+                conn.commit()
                 if len(res) == 0:
                     return None
 
-                links = conn.execute(
+                stmt = select(Links).from_statement(
                     text("""
-                SELECT * FROM links WHERE "sourceUrl_id" =:url_id
-                """),
-                    {"url_id": res[0]["url_id"]},
+                        SELECT *
+                        FROM links
+                        WHERE "sourceUrl_id" = :url_id
+                    """)
+                )
+                print("A")
+                links = conn.scalars(
+                    stmt,
+                    {"url_id": res[0].url_id},
                 ).all()
+                print("B")
+
                 jobs = []
                 links = self.check_if_visited(links)
-                if job.depth > 1:
+                if job.depth >= 1:
+                    print("jobis greateer than 1c")
                     for l in links:
                         # base = l.sourceUrl
                         # relative = l.targetUrl
                         # absolute = urljoin(base, relative)
-                        job = Job(
+                        print("depth:", job.depth)
+                        jobb = Job(
                             id=job.id,
                             status=JobStatus.PENDING,
                             depth=job.depth - 1,
                             url=l.targetUrl,
                         )
-                        jobs.append(job)
-                else:
-                    self.complete(job.id)
+                        jobs.append(jobb)
+                print("jobsd to be sent:", jobs)
                 return jobs
                 # now there is no need for refecthing the data
 
         except Exception as e:
             print(e)
+
+            return None
 
     def check_job(self, job):
         try:
@@ -132,7 +143,7 @@ class JobRepository:
 
                 if row is None:
                     print("Job not present in the db")
-                    return False, None, 0
+                    return False, None, False
 
                 row_dict = dict(row._mapping)
                 dif = 0
@@ -162,10 +173,10 @@ class JobRepository:
                 )
                 row1 = res1.first()
                 if row1 is None:
-                    return True, row_dict, dif
+                    return True, None, False
                 row2 = res2.first()
                 if row2 is None:
-                    return True, row_dict, dif
+                    return True, None, False
                 job_log_mapping = row1._mapping
                 print(job_log_mapping)
                 job_mapping = row2._mapping
@@ -360,27 +371,6 @@ class JobRepository:
                     print("res: ", hey.fetchall())
                     conn.commit()
 
-                    # links = conn.execute(
-                    #     text(
-                    #         """
-                    #         WITH target_job AS (
-                    #             SELECT id
-                    #             FROM job
-                    #             WHERE job_id = :request_job_id
-                    #             LIMIT 1
-                    #         ),
-                    #         job_log AS (
-                    #             SELECT MIN(depth) AS min_depth, url_id
-                    #             FROM link_log
-                    #             WHERE job_id = (SELECT id FROM target_job)  -- Perfectly matches integer types
-                    #             GROUP BY url_id
-                    #         )
-                    #         SELECT l.* FROM links l
-                    #         JOIN job_log j ON l."sourceUrl_id" = j.url_id;
-                    #         """
-                    #     ),
-                    #     {"request_job_id": job.id},
-                    # ).all()
                     stmt = select(Links).from_statement(
                         text("""
                                 WITH target_job AS (
@@ -390,7 +380,7 @@ class JobRepository:
                                     LIMIT 1
                                 ),
                                 job_log AS (
-                                    SELECT MIN(depth) AS min_depth, url_id
+                                    SELECT MAX(depth) AS max_depth, url_id
                                     FROM link_log
                                     WHERE job_id = (SELECT id FROM target_job)
                                     GROUP BY url_id
@@ -409,31 +399,21 @@ class JobRepository:
                     tbr = []
                     links = self.check_if_visited(links)
 
-                    # for l in links:
-                    #     base = l.sourceUrl
-                    #     relative = l.targetUrl
-                    #     absolute = urljoin(base, relative)
-                    #     job = Job(
-                    #         id=job.id,
-                    #         status=JobStatus.PENDING,
-                    #         depth=job.depth - 1,
-                    #         url=absolute,
-                    #     )
-                    #     tbr.append(job)
                     if job.depth > 1:
                         for l in links:
-                            job = Job(
+                            jobb = Job(
                                 id=job.id,
                                 status=JobStatus.PENDING,
-                                depth=job.depth - 1,
+                                depth=abs(dif),
                                 url=l.targetUrl,
                             )
-                            tbr.append(job)
-                    else:
-                        self.complete(job.id)
+                            # print("dpeth:", job.depth)
+                            tbr.append(jobb)
+                            # else:
+                            #     self.complete(job.id)
                     print("THE LENGHT OF LINKS", len(tbr))
-                    return True, tbr, dif
-                return True, None, dif
+                    return True, tbr, True
+                return True, None, True
         except Exception as e:
             print("Exception in the check url:", e)
             raise Exception("in check url :", e)
@@ -494,19 +474,22 @@ class JobRepository:
     def check_if_visited(self, links):
         with Session(self.engine) as session:
             # 1. Normalize all target URLs to absolute paths
+            print("C")
+
             for link in links:
                 if link.sourceUrl and link.targetUrl:
                     link.targetUrl = urljoin(link.sourceUrl, link.targetUrl)
 
             # 2. Extract the resolved unique target strings for the DB query
             incoming_urls = {link.targetUrl for link in links if link.targetUrl}
+            print("D")
 
             if not incoming_urls:
                 return []
 
-            # 3. Query the database to find which ones already exist
             stmt = select(Url.url).where(Url.__table__.c.url.in_(incoming_urls))
             existing_urls = set(session.scalars(stmt).all())
+            print("E")
 
             # 4. Filter out items in DB AND clear duplicates within the batch itself
             unvisited_objects = []
