@@ -1,5 +1,7 @@
 from datetime import datetime
 from typing import List
+from urllib.parse import urlparse
+from urllib.robotparser import RobotFileParser
 
 import requests
 from bs4 import BeautifulSoup
@@ -10,7 +12,15 @@ class Extractor(BeautifulSoup):
     def __init__(self, url):
         self.url = url
 
-        response = requests.get(url)
+        # rp = RobotFileParser()
+        # rp.set_url(self.root_url)
+        # try:
+        #     rp.read()
+        #     print("robots.txt loaded successfully.")
+        # except Exception as e:
+        #     print(f"Failed to read robots.txt: {e}")
+        headers = {"User-Agent": ("SteelCrawler/1.0 (+https://github.com/steel77-7/)")}
+        response = requests.get(url, headers=headers)
         # print("Url to be processed", response.text)
         self.fetched = True
         if response.status_code > 400:

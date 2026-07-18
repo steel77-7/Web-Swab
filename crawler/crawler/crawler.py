@@ -1,6 +1,10 @@
 import copy
 import logging
-from urllib.parse import urljoin
+import time
+from datetime import datetime, timedelta
+from urllib.error import HTTPError, URLError
+from urllib.parse import urljoin, urlparse
+from urllib.robotparser import RobotFileParser
 
 import requests
 from broker.send_to_broker import Broker
@@ -9,6 +13,7 @@ from conf.conf import conf
 from db.jobrepository import JobRepository
 from models.models import Job, Job_db, JobStatus, Link_log, Tbs, Url
 from soup.extractor import Extractor
+from url_normalize import url_normalize
 
 logging.basicConfig(
     level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s"
@@ -19,7 +24,9 @@ class Crawler:
     def __init__(self, job: Job):
         self.id = job.id
         print("1")
-
+        job.url = url_normalize(job.url)
+        parsed_url = urlparse(job.url)
+        self.root_url = f"{parsed_url.scheme}://{parsed_url.netloc}/robots.txt"
         self.url = job.url
         # self.extractor = Extractor(job.url)
         self.caching = Caching()
@@ -33,6 +40,27 @@ class Crawler:
 
     def add(self):
         try:
+            if not self.caching.check_robot(self.url):
+                rp = RobotFileParser()
+                rp.set_url(self.root_url + "/robots.txt")
+                try:
+                    rp.read()
+                    delay = rp.crawl_delay(
+                        "SteelCrawler/1.0 (+https://github.com/steel77-7/)"
+                    )
+                    if delay is None:
+                        raise
+                    self.caching.add_robot(
+                        {
+                            "delay": delay,
+                            "nextcrawl": datetime.now() + timedelta(seconds=int(delay)),
+                        },
+                        self.url,
+                    )
+                except (HTTPError, URLError):
+                    print("No robots.txt found")
+            if not self.caching.crawl_ready(self.url):
+                return
             in_redis = self.caching.check_if_present(self.job.url)
             job_in_db, duplicate = self.jobRepo.check_job(self.job)
             if duplicate:
@@ -42,6 +70,8 @@ class Crawler:
             if job_in_db and not in_redis:
                 # either a depth continuation or duplicate job
                 self.extractor = Extractor(self.url)
+
+                self.caching.update_next_time(self.root_url)
                 self.caching.add_entry(self.job.model_dump())
                 site_data = self.extractor.complete()
                 links = copy.deepcopy(site_data["new_urls"])
@@ -83,6 +113,8 @@ class Crawler:
                 if not url_in_db:
                     # totally new job
                     self.extractor = Extractor(self.url)
+                    self.caching.update_next_time(self.root_url)
+
                     self.caching.add_entry(self.job.model_dump())
                     site_data = self.extractor.complete()
                     job_tbs = Job_db(job_id=self.job.id, depth=self.job.depth)
