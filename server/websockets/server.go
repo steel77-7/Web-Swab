@@ -6,139 +6,182 @@ package websockets
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"io"
 	"log"
+	"net"
+	"net/http"
 	"sync"
 	"time"
 
-	"github.com/coder/websocket"
 	"github.com/google/uuid"
-	"github.com/steel77-7/Web-Swab/internals/broker"
+
+	"github.com/coder/websocket"
 	"github.com/steel77-7/Web-Swab/internals/types"
+	"golang.org/x/time/rate"
 )
 
 type Message struct {
-	Kind string
-	Data []byte
+	Kind string `json:"kind"`
+	Data []byte `json:"data"`
 }
 
-type Event struct {
-	Status   types.JobStatus
-	ClientID string
-	JobID    string
+type subscriber struct {
+	msgs      chan Message
+	closeSlow func()
 }
 
-var AcceptChan = make(chan *websocket.Conn, 1000)
-var DBEventChan = make(chan Event)
-
-type Client struct {
-	ID   string
-	Conn *websocket.Conn
-	Req  *context.Context
-	// Mu   *sync.Mutex
-}
 type Server struct {
-	Clients map[string]*Client
-	Mu      *sync.Mutex
-	// Ctx     *context.Context
+	subscriberMessageBuffer int
+	publishLimiter          *rate.Limiter
+	logf                    func(f string, v ...any)
+	ServeMux                http.ServeMux
+	subscribersMu           sync.Mutex
+	subscribers             map[string]*subscriber
+	// subscribers             map[*subscriber]struct{}
 }
 
-func NewServer() (*Server, error) {
-	//	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
-
-	return &Server{
-		Clients: make(map[string]*Client),
-		Mu:      &sync.Mutex{},
-		//Ctx:     &ctx,
-	}, nil
-}
-
-func (s *Server) AcceptConnections() {
-	ctx, _ := context.WithTimeout(context.Background(), time.Second*10)
-	for {
-		newclient := <-AcceptChan
-		log.Print("new socket client")
-		//this will then be registered to the Server
-		id := uuid.New().String()
-		c := &Client{ID: id, Conn: newclient}
-		s.Clients[id] = c
-		go s.readloop(c, ctx)
-
+func NewServer() *Server {
+	s := &Server{
+		subscriberMessageBuffer: 16,
+		logf:                    log.Printf,
+		subscribers:             make(map[string]*subscriber),
+		publishLimiter:          rate.NewLimiter(rate.Every(time.Millisecond*100), 8),
 	}
+	//	s.serveMux.Handle("/", http.FileServer(http.Dir(".")))
+
+	s.ServeMux.HandleFunc("/subscribe", s.subscribeHandler)
+	s.ServeMux.HandleFunc("/publish", s.publishHandler)
+	log.Print("its alive")
+	return s
 }
-
-func (s *Server) readloop(c *Client, ctx context.Context) {
-	defer c.Conn.Close(websocket.StatusNormalClosure, "")
-
-	for {
-		_, data, err := c.Conn.Read(ctx)
-		if err != nil {
-			log.Printf("Couldnt read values from client %v: %v", c.ID, err)
-			return
-		}
-
-		var msg Message
-		if err := json.Unmarshal(data, &msg); err != nil {
-			log.Printf("Failed to unmarshal: %v", err)
-			continue
-		}
-		s.messagehandler(c, msg)
-	}
+func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	s.ServeMux.ServeHTTP(w, r)
 }
-
-func (s *Server) messagehandler(c *Client, msg Message) {
-	switch msg.Kind {
-	case "NEW":
-		{
-			//agr merer pass new messages hai to unka me ikya krunga??
-			// send them to the broker
-			// parse the message now
-			var job types.Job
-			err := json.Unmarshal(msg.Data, &job)
-			if err != nil {
-				log.Print("Couldnt unmarshal  the data:", err)
-				return
+func (s *Server) subscribe(w http.ResponseWriter, r *http.Request) error {
+	var mu sync.Mutex
+	var c *websocket.Conn
+	var closed bool
+	sub := &subscriber{
+		msgs: make(chan Message, s.subscriberMessageBuffer),
+		closeSlow: func() {
+			mu.Lock()
+			defer mu.Unlock()
+			closed = true
+			if c != nil {
+				c.Close(websocket.StatusPolicyViolation, "connection too slow")
 			}
-			broker.PushToBroker(job)
-		}
-	case "CLOSE":
-		{
-			c.Conn.Close(websocket.StatusNormalClosure, "")
-			log.Print("Connection to the socket closed: ", c.ID)
-			//dletign the user from the client map
-			delete(s.Clients, c.ID)
-		}
-	case "":
-		{
-
-		}
+		},
 	}
-}
-
-func (s *Server) send(c *Client, msg Message) error {
-	tbs, _ := json.Marshal(msg)
-	err := c.Conn.Write(*c.Req, websocket.MessageText, []byte(tbs))
+	id := s.addSubscriber(sub)
+	defer s.deleteSubscriber(id)
+	//clients aree accepted here
+	c2, err := websocket.Accept(w, r, nil)
 	if err != nil {
-		log.Print("COuldnt write to socket :", c.ID)
 		return err
 	}
-	return nil
+	mu.Lock()
+	if closed {
+		mu.Unlock()
+		return net.ErrClosed
+	}
+	c = c2
+	mu.Unlock()
+	defer c.CloseNow()
+	ctx := c.CloseRead(context.Background())
+	for {
+		select {
+		case msg := <-sub.msgs:
+			err := writeTimeout(ctx, time.Second*5, c, msg.Data)
+			if err != nil {
+				return err
+			}
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
 }
 
-// short lived go routines for seindiong data back to the client
-func (s *Server) Writer() {
-	for {
-		event := <-DBEventChan
-		//then feed thsi to the map
-		val, ok := s.Clients[event.ClientID]
-		if !ok {
-			log.Print("Client removed from the server: ", event.ClientID)
-			continue
+func (s *Server) subscribeHandler(w http.ResponseWriter, r *http.Request) {
+	err := s.subscribe(w, r)
+	if errors.Is(err, context.Canceled) {
+		return
+	}
+	if websocket.CloseStatus(err) == websocket.StatusNormalClosure ||
+		websocket.CloseStatus(err) == websocket.StatusGoingAway {
+		return
+	}
+	if err != nil {
+		s.logf("%v", err)
+		return
+	}
+}
+
+func msgParser(msg []byte) (Message, error) {
+	var res Message
+	err := json.Unmarshal(msg, &res)
+	if err != nil {
+		return Message{}, err
+	}
+	return res, nil
+}
+func (s *Server) publishHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+		return
+	}
+	body := http.MaxBytesReader(w, r.Body, 8192)
+	msg, err := io.ReadAll(body)
+	if err != nil {
+		http.Error(w, http.StatusText(http.StatusRequestEntityTooLarge), http.StatusRequestEntityTooLarge)
+		return
+	}
+	parsedMsg, _ := msgParser(msg)
+	switch parsedMsg.Kind {
+	case "DATA":
+		{
+			// got the  the new request for url
+			var data types.Job
+			json.Unmarshal(parsedMsg.Data, &data)
+			log.Print("data receicevf :", string(parsedMsg.Data))
+			//push to broker
 		}
-		tbs, _ := json.Marshal(event)
-		s.send(val, Message{
-			Kind: "Status",
-			Data: []byte(tbs),
-		})
 
 	}
+	// s.publish(msg)
+
+	w.WriteHeader(http.StatusAccepted)
+}
+func (s *Server) publish(msg Message) {
+	s.subscribersMu.Lock()
+	defer s.subscribersMu.Unlock()
+
+	s.publishLimiter.Wait(context.Background())
+
+	for _, sub := range s.subscribers {
+		select {
+		case sub.msgs <- msg:
+		default:
+			go sub.closeSlow()
+		}
+	}
+}
+
+func (s *Server) addSubscriber(sub *subscriber) string {
+	id := uuid.NewString()
+	s.subscribersMu.Lock()
+	s.subscribers[id] = sub
+	s.subscribersMu.Unlock()
+	return id
+}
+func (s *Server) deleteSubscriber(id string) {
+	s.subscribersMu.Lock()
+	delete(s.subscribers, id)
+	s.subscribersMu.Unlock()
+}
+func writeTimeout(ctx context.Context, timeout time.Duration, c *websocket.Conn, msg []byte) error {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	return c.Write(ctx, websocket.MessageText, msg)
 }

@@ -86,17 +86,12 @@ class Crawler:
                 }
 
                 self.jobRepo.insert_tbs(data)
-                self.caching.remove(self.job.url)  #:problem
-
-                # to the broker
+                self.caching.remove(self.job.url)
                 structured_data = []
                 print("Links recovered :\t ", len(links))
                 if self.job.depth > 1:
                     links = self.jobRepo.check_if_visited(links)
                     for l in links:
-                        # base = l.sourceUrl
-                        # relative = l.targetUrl
-                        # absolute = urljoin(base, relative)
                         job = Job(
                             id=self.id,
                             status=JobStatus.PENDING,
@@ -106,8 +101,6 @@ class Crawler:
 
                         structured_data.append(job)
                     self.broker.send_to_broker(structured_data, self.id)
-                    # else:
-                    #     self.jobRepo.complete(self.job.id)
 
             elif not job_in_db and not in_redis:
                 if not url_in_db:
