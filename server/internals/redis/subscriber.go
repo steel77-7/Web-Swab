@@ -42,6 +42,19 @@ func NewLogSubscriber(addr string, handler MessageHandler) (*LogSubscriber, erro
 	}, nil
 }
 
+// InitJobCount initializes the reference count hash in Redis for a new job if it doesn't exist.
+func (ls *LogSubscriber) InitJobCount(jobID string) error {
+	ctx := context.Background()
+	key := "job:" + jobID
+	err := ls.client.HSetNX(ctx, key, "count", 1).Err()
+	if err != nil {
+		log.Printf("failed to init job count for %s: %v", jobID, err)
+		return err
+	}
+	log.Printf("initialized job count hash for %s with count=1", jobID)
+	return nil
+}
+
 // channelName returns the Redis channel for a given job ID.
 func channelName(jobID string) string {
 	return "crawl:logs:" + jobID

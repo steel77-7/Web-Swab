@@ -166,6 +166,9 @@ func (s *Server) readLoop(ctx context.Context, c *websocket.Conn, errc chan<- er
 
 			// Notify the subscribe loop to re-key and start Redis sub.
 			if job.ID != "" {
+				if s.redisSub != nil {
+					s.redisSub.InitJobCount(job.ID)
+				}
 				select {
 				case jobIDChan <- job.ID:
 				default:

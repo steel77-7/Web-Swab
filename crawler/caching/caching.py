@@ -91,3 +91,39 @@ class Caching:
         except redis.RedisError as e:
             # Log publishing should never crash the crawler
             logger.warning(f"failed to publish log for job {job_id}: {e}")
+
+    def init_job_count(self, job_id: str):
+        """Initialize the reference count hash in Redis for a job if not already present."""
+        try:
+            self.r.hsetnx(f"job:{job_id}", "count", 1)
+        except redis.RedisError as e:
+            logger.warning(f"failed to init job count for {job_id}: {e}")
+
+    def inc_job_count(self, job_id: str, amount: int):
+        """Increment the job reference count by the number of new sub-jobs queued."""
+        if amount <= 0:
+            return
+        try:
+            new_val = self.r.hincrby(f"job:{job_id}", "count", amount)
+            logger.debug(f"inc_job_count for {job_id} by {amount} -> current count: {new_val}")
+        except redis.RedisError as e:
+            logger.warning(f"failed to inc job count for {job_id}: {e}")
+
+    def dec_job_count_and_check(self, job_id: str) -> int:
+        """Decrement the job reference count by 1 after a unit of work finishes.
+        If the count reaches 0, publish a completion event to the Redis pub/sub channel."""
+        try:
+            val = self.r.hincrby(f"job:{job_id}", "count", -1)
+            logger.debug(f"dec_job_count for {job_id} -> current count: {val}")
+            if val <= 0:
+                self.publish_log(
+                    job_id,
+                    "info",
+                    f"Crawl job {job_id} completed successfully!",
+                )
+                # Set TTL on job hash so completed job keys don't leak forever
+                self.r.expire(f"job:{job_id}", 3600)
+            return val
+        except redis.RedisError as e:
+            logger.warning(f"failed to dec job count for {job_id}: {e}")
+            return -1

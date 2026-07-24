@@ -39,6 +39,7 @@ class Crawler:
 
     def add(self):
         self.caching.publish_log(self.id, "info", f"job started: {self.url} (depth {self.job.depth})")
+        self.caching.init_job_count(self.id)
         try:
             if not self.caching.check_robot(self.url):
                 rp = RobotFileParser()
@@ -99,6 +100,8 @@ class Crawler:
                         )
 
                         structured_data.append(job)
+                    if len(structured_data) > 0:
+                        self.caching.inc_job_count(self.id, len(structured_data))
                     self.caching.publish_log(self.id, "info", f"sending {len(structured_data)} sub-jobs to broker")
                     self.broker.send_to_broker(structured_data, self.id)
 
@@ -129,9 +132,6 @@ class Crawler:
                     if self.job.depth > 1:
                         links = self.jobRepo.check_if_visited(links)
                         for l in links:
-                            # base = l.sourceUrl
-                            # relative = l.targetUrl
-                            # absolute = urljoin(base, relative)
                             job = Job(
                                 id=self.id,
                                 status=JobStatus.PENDING,
@@ -140,15 +140,17 @@ class Crawler:
                             )
 
                             structured_data.append(job)
+                        if len(structured_data) > 0:
+                            self.caching.inc_job_count(self.id, len(structured_data))
                         self.caching.publish_log(self.id, "info", f"sending {len(structured_data)} sub-jobs to broker")
                         self.broker.send_to_broker(structured_data, self.id)
-                        # else:
-                        #     self.jobRepo.complete(self.job.id)
 
                 else:
                     self.caching.publish_log(self.id, "info", f"url already seen, handling depth continuation for {self.url}")
 
                     if broker_links is not None:
+                        if len(broker_links) > 0:
+                            self.caching.inc_job_count(self.id, len(broker_links))
                         self.caching.publish_log(self.id, "info", f"re-sending {len(broker_links)} cached links to broker")
                         self.broker.send_to_broker(broker_links, self.id)
                         return
@@ -156,11 +158,12 @@ class Crawler:
                         return
                     self.caching.publish_log(self.id, "info", f"depth handler for {self.url}")
                     self.job.id = self.id
-                    # going with  simpler approach for now
                     jobs = self.jobRepo.depth_handler(self.job)
                     if jobs is None or len(jobs) == 0:
                         self.caching.publish_log(self.id, "warn", f"mid-depth handler returned no jobs for {self.url}")
                         return
+                    if len(jobs) > 0:
+                        self.caching.inc_job_count(self.id, len(jobs))
                     self.broker.send_to_broker(jobs, self.id)
 
             elif not job_in_db and in_redis and not url_in_db:
@@ -173,6 +176,8 @@ class Crawler:
                 exc_info=True,
             )
             return
+        finally:
+            self.caching.dec_job_count_and_check(self.id)
 
     def send_to_broker(self, payload):
         requests.post("broker url", data=payload)
