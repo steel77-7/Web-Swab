@@ -1,8 +1,5 @@
 package ui
 
-// A simple example demonstrating the use of multiple text input components
-// from the Bubbles component library.
-
 import (
 	"fmt"
 	"os"
@@ -10,10 +7,11 @@ import (
 	"strings"
 
 	"charm.land/bubbles/v2/cursor"
-	"charm.land/bubbles/v2/spinner"
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+
+	ws "github.com/steel77-7/Web-Swab/socket"
 )
 
 var (
@@ -34,22 +32,23 @@ type model struct {
 	cursorMode cursor.Mode
 	quitting   bool
 
-	spinner   spinner.Model
-	sub       chan struct{}
-	responses int
+	logPanel LogPanel
+	width    int
+	height   int
 }
 
-func waitForActivity(sub chan struct{}) tea.Cmd {
-	return func() tea.Msg {
-
-	}
+// waitForServerEvent listens on the socket's LogChan and returns a
+// LogEventMsg when something arrives. Bubble Tea re-invokes this as
+// a Cmd after each message, creating a continuous listener loop.
+func waitForServerEvent() tea.Msg {
+	data := <-ws.LogChan
+	return LogEventMsg{Payload: string(data)}
 }
 
 func initialModel() model {
 	m := model{
-		inputs:  make([]textinput.Model, 3),
-		spinner: spinner.New(),
-		sub:     make(chan struct{}),
+		inputs:   make([]textinput.Model, 2),
+		logPanel: NewLogPanel(),
 	}
 
 	var t textinput.Model
@@ -62,7 +61,7 @@ func initialModel() model {
 		s.Focused.Prompt = focusedStyle
 		s.Focused.Text = focusedStyle
 		s.Blurred.Prompt = blurredStyle
-		s.Focused.Text = focusedStyle
+		s.Blurred.Text = blurredStyle
 		t.SetStyles(s)
 
 		switch i {
@@ -79,9 +78,6 @@ func initialModel() model {
 				}
 				return nil
 			}
-			// case 2:
-			// 	t.Placeholder = "
-
 		}
 
 		m.inputs[i] = t
@@ -93,19 +89,45 @@ func initialModel() model {
 func (m model) Init() tea.Cmd {
 	return tea.Batch(
 		textinput.Blink,
-		m.spinner.Tick,
-		// listenForActivity(m.sub),
-		waitForActivity(m.sub),
+		waitForServerEvent,
 	)
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+
+	// ── server log event ────────────────────────────────────
+	case LogEventMsg:
+		m.logPanel.Push(msg.Payload)
+		// Re-subscribe to wait for the next event.
+		return m, waitForServerEvent
+
+	// ── terminal resize ─────────────────────────────────────
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
+		// Give roughly bottom 40% of the terminal to the log panel.
+		logHeight := m.height*4/10 - 4
+		if logHeight < 5 {
+			logHeight = 5
+		}
+		m.logPanel.SetSize(m.width, logHeight)
+		return m, nil
+
+	// ── keyboard ────────────────────────────────────────────
 	case tea.KeyPressMsg:
 		switch msg.String() {
 		case "ctrl+c", "esc":
 			m.quitting = true
 			return m, tea.Quit
+
+		// Scroll log panel
+		case "ctrl+k":
+			m.logPanel.ScrollUp(3)
+			return m, nil
+		case "ctrl+j":
+			m.logPanel.ScrollDown(3)
+			return m, nil
 
 		// Change cursor mode
 		case "ctrl+r":
@@ -121,12 +143,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, tea.Batch(cmds...)
 
-		// Set focus to next input
+		// Navigate inputs
 		case "tab", "shift+tab", "enter", "up", "down":
 			s := msg.String()
 
-			// Did the user press enter while the submit button was focused?
-			// If so, exit.
+			// Submit
 			if s == "enter" && m.focusIndex == len(m.inputs) {
 				return m, tea.Quit
 			}
@@ -147,11 +168,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds := make([]tea.Cmd, len(m.inputs))
 			for i := 0; i <= len(m.inputs)-1; i++ {
 				if i == m.focusIndex {
-					// Set focused state
 					cmds[i] = m.inputs[i].Focus()
 					continue
 				}
-				// Remove focused state
 				m.inputs[i].Blur()
 			}
 
@@ -181,6 +200,14 @@ func (m model) View() tea.View {
 	var b strings.Builder
 	var c *tea.Cursor
 
+	// ── title ───────────────────────────────────────────────
+	titleStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("205")).
+		Bold(true)
+	b.WriteString(titleStyle.Render("🕷  Web-Swab"))
+	b.WriteString("\n\n")
+
+	// ── input form ──────────────────────────────────────────
 	for i, in := range m.inputs {
 		b.WriteString(m.inputs[i].View())
 		if i < len(m.inputs)-1 {
@@ -189,7 +216,8 @@ func (m model) View() tea.View {
 		if m.cursorMode != cursor.CursorHide && in.Focused() {
 			c = in.Cursor()
 			if c != nil {
-				c.Y += i
+				// Offset cursor Y for title lines above + input index.
+				c.Y += i + 2 // 2 = title + blank line
 			}
 		}
 	}
@@ -200,9 +228,12 @@ func (m model) View() tea.View {
 	}
 	fmt.Fprintf(&b, "\n\n%s\n\n", *button)
 
-	b.WriteString(helpStyle.Render("cursor mode is "))
-	b.WriteString(cursorModeHelpStyle.Render(m.cursorMode.String()))
-	b.WriteString(helpStyle.Render(" (ctrl+r to change style)"))
+	// ── log panel ───────────────────────────────────────────
+	b.WriteString(m.logPanel.View())
+	b.WriteRune('\n')
+
+	// ── help ────────────────────────────────────────────────
+	b.WriteString(helpStyle.Render("ctrl+j/k scroll logs • esc quit"))
 
 	if m.quitting {
 		b.WriteRune('\n')
