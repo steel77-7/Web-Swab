@@ -8,15 +8,10 @@ import (
 )
 
 func LoadConfig() *types.Config {
-
-	log.Print("IT it woirking ???")
 	var cfg types.Config
 	if err := env.Parse(&cfg); err != nil {
-		log.Fatal(err)
+		log.Fatal("failed to parse config: ", err)
 	}
-	log.Print("cfg")
-	log.Print("cfg", cfg.BROKER_URL)
-
 	return &cfg
 }
 

@@ -37,7 +37,7 @@ func NewClient(ctx context.Context, cancel context.CancelFunc) *Client {
 	if err != nil {
 		log.Fatal("couldn't connect to the server: ", err)
 	}
-	log.Print("connected")
+	log.Println("websocket connected to server")
 	return &Client{
 		ws:     c,
 		quitch: make(chan struct{}),
@@ -49,7 +49,7 @@ func NewClient(ctx context.Context, cancel context.CancelFunc) *Client {
 func (c *Client) Start() {
 	go c.sendLoop()
 	go c.listener()
-	log.Print("started")
+	log.Println("websocket send/receive loops started")
 }
 
 func (c *Client) sendLoop() {
@@ -94,6 +94,6 @@ func (c *Client) listener() {
 // anything watching ctx.Done() knows the client is going away. Safe to
 // call from either loop even if the other already triggered it.
 func (c *Client) shutdown() {
-	c.ws.CloseNow()
+	c.ws.Close(websocket.StatusNormalClosure, "client disconnecting")
 	c.cancel()
 }

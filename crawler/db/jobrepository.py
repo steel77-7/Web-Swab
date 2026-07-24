@@ -1,3 +1,4 @@
+import logging
 from typing import List
 from urllib.parse import urljoin
 
@@ -6,6 +7,8 @@ from db.db import engine
 from models.models import Job, JobStatus, Links, Url
 from sqlalchemy import select, text
 from sqlmodel import Session
+
+logger = logging.getLogger(__name__)
 
 
 class JobRepository:
@@ -62,14 +65,11 @@ class JobRepository:
                 ).all()
                 conn.commit()
                 jobs = []
-                # links = self.check_if_visited(links)
                 if job.depth > 1:
-                    print("jobis greateer than 1c")
                     for l in links:
                         base = l.sourceUrl
                         relative = l.targetUrl
                         absolute = urljoin(base, relative)
-                        print("depth:", job.depth)
                         jobb = Job(
                             id=job.id,
                             status=JobStatus.PENDING,
@@ -77,10 +77,9 @@ class JobRepository:
                             url=absolute,
                         )
                         jobs.append(jobb)
-                print("jobsd to be sent:", jobs)
                 return jobs
         except Exception as e:
-            print("in depth handler:", e)
+            logger.error(f"depth_handler failed for job {job.id}: {e}", exc_info=True)
             return None
 
     def check_job(self, job):
@@ -92,14 +91,13 @@ class JobRepository:
                 row = result.fetchone()
                 duplicate = False
                 if row is None:
-                    print("newJob")
                     return False, duplicate
                 if row.depth == job.depth:
                     duplicate = True
                 return True, duplicate
         except Exception as e:
-            print("Exception in the Check job in the job repo: ", e)
-            return None, None
+            logger.error(f"check_job failed for job {job.id}: {e}", exc_info=True)
+            raise
 
     def check_url(self, job):
         try:
@@ -111,7 +109,6 @@ class JobRepository:
                 row = result.first()
 
                 if row is None:
-                    print("Job not present in the db")
                     return False, None, False
 
                 row_dict = dict(row._mapping)
@@ -147,14 +144,11 @@ class JobRepository:
                 if row2 is None:
                     return True, None, False
                 job_log_mapping = row1._mapping
-                print(job_log_mapping)
                 job_mapping = row2._mapping
                 dif = job_mapping["depth"] - job.depth
-                print("diff :", dif)
                 max_depth = job_mapping["depth"] + job.depth
                 if dif == 0:
-                    print("all the data already available")
-                    hey = conn.execute(
+                    conn.execute(
                         text(
                             """
                             WITH inserted_job AS (
@@ -193,9 +187,6 @@ class JobRepository:
                             "depth": job.depth,
                         },
                     )
-                    print("res")
-
-                    print(hey.all())
                     conn.execute(
                         text(
                             "SELECT pg_notify('job_completed', CAST(:job_id AS TEXT));"
@@ -203,27 +194,8 @@ class JobRepository:
                         {"job_id": job.id},
                     )
                     conn.commit()
-                    rows = conn.execute(
-                        text("""
-                            SELECT
-                                ll.id,
-                                ll.job_id,
-                                ll.depth,
-                                ll.url_id
-                            FROM link_log ll
-                            WHERE ll.job_id = :job_id
-                        """),
-                        {
-                            "job_id": job_log_mapping["job_id"],
-                        },
-                    ).all()
 
-                    print("Rows found:", len(rows))
-
-                    for row in rows:
-                        print(dict(row._mapping))
                 elif dif > 0:
-                    print("There is already enough data available")
                     conn.execute(
                         text(
                             """
@@ -275,28 +247,9 @@ class JobRepository:
                         {"job_id": job.id},
                     )
                     conn.commit()
-                    rows = conn.execute(
-                        text("""
-                            SELECT
-                                ll.id,
-                                ll.job_id,
-                                ll.depth,
-                                ll.url_id
-                            FROM link_log ll
-                            WHERE ll.job_id = :job_id
-                        """),
-                        {
-                            "job_id": job_log_mapping["job_id"],
-                        },
-                    ).all()
 
-                    print("Rows found:", len(rows))
-
-                    for row in rows:
-                        print(dict(row._mapping))
                 elif dif < 0:
-                    print("Means more pages need to be fetched")
-                    hey = conn.execute(
+                    conn.execute(
                         text(
                             """
                             WITH inserted_job AS (
@@ -337,7 +290,6 @@ class JobRepository:
                             "job_log_depth": job_log_mapping["depth"],
                         },
                     )
-                    print("res: ", hey.fetchall())
                     conn.commit()
 
                     stmt = select(Links).from_statement(
@@ -364,7 +316,6 @@ class JobRepository:
                     links = conn.scalars(stmt, {"request_job_id": job.id}).all()
                     conn.commit()
 
-                    # this will retur n a l;ot of rows
                     tbr = []
                     links = self.check_if_visited(links)
 
@@ -376,38 +327,34 @@ class JobRepository:
                                 depth=abs(dif),
                                 url=l.targetUrl,
                             )
-                            # print("dpeth:", job.depth)
                             tbr.append(jobb)
-                            # else:
-                            #     self.complete(job.id)
-                    print("THE LENGHT OF LINKS", len(tbr))
                     return True, tbr, True
                 return True, None, True
         except Exception as e:
-            print("Exception in the check url:", e)
-            raise Exception("in check url :", e)
+            logger.error(f"check_url failed for job {job.id}, url {job.url}: {e}", exc_info=True)
+            raise
 
     def insert_tbs(self, data):
         with Session(self.engine) as session:
             try:
-                # 1. Check if the URL already exists using its unique string attribute (assuming .url)
+                # 1. Check if the URL already exists using its unique string attribute
                 existing_url = session.scalars(
                     select(Url).filter_by(url=data["url"].url)
                 ).first()
 
                 if existing_url:
-                    # Use the undisturbed, existing DB entry (brings the actual id with it)
+                    # Use the undisturbed, existing DB entry
                     data["url"] = existing_url
                 else:
                     # Brand new URL, insert it safely
                     session.add(data["url"])
-                    session.flush()  # Flush gives us the new data["url"].id without committing yet
+                    session.flush()
 
                 # 2. Handle the job logic
                 if data["job"] is not None:
                     data["job"].url_id = data["url"].id
                     session.add(data["job"])
-                    session.flush()  # Populates data["job"].id
+                    session.flush()
 
                     data["job_log"].job_id = data["job"].id
                     data["job_log"].root_depth = data["job"].depth
@@ -418,6 +365,11 @@ class JobRepository:
                         {"id": data["job_log"].job_id},
                     )
                     row = res.first()
+
+                    if row is None:
+                        logger.error(f"insert_tbs: job not found for job_id={data['job_log'].job_id}")
+                        session.rollback()
+                        return
 
                     data["job_log"].job_id = row.id
                     data["job_log"].root_depth = row.depth
@@ -436,50 +388,53 @@ class JobRepository:
                 session.commit()
 
             except Exception as e:
-                session.rollback()  # Good practice to explicitly rollback on failure
-                print("Error in the insert tbs in job repository :", e)
+                session.rollback()
+                logger.error(f"insert_tbs failed: {e}", exc_info=True)
                 return
 
     def check_if_visited(self, links):
-        with Session(self.engine) as session:
-            # 1. Normalize all target URLs to absolute paths
-            print("C")
+        try:
+            with Session(self.engine) as session:
+                # 1. Normalize all target URLs to absolute paths
+                for link in links:
+                    if link.sourceUrl and link.targetUrl:
+                        link.targetUrl = urljoin(link.sourceUrl, link.targetUrl)
 
-            for link in links:
-                if link.sourceUrl and link.targetUrl:
-                    link.targetUrl = urljoin(link.sourceUrl, link.targetUrl)
+                # 2. Extract the resolved unique target strings for the DB query
+                incoming_urls = {link.targetUrl for link in links if link.targetUrl}
 
-            # 2. Extract the resolved unique target strings for the DB query
-            incoming_urls = {link.targetUrl for link in links if link.targetUrl}
-            print("D")
+                if not incoming_urls:
+                    return []
 
-            if not incoming_urls:
-                return []
+                stmt = select(Url.url).where(Url.__table__.c.url.in_(incoming_urls))
+                existing_urls = set(session.scalars(stmt).all())
 
-            stmt = select(Url.url).where(Url.__table__.c.url.in_(incoming_urls))
-            existing_urls = set(session.scalars(stmt).all())
-            print("E")
+                # 3. Filter out items in DB AND clear duplicates within the batch
+                unvisited_objects = []
+                seen_unvisited = set()
 
-            # 4. Filter out items in DB AND clear duplicates within the batch itself
-            unvisited_objects = []
-            seen_unvisited = set()  # Tracks URLs we have already decided to process
+                for link in links:
+                    url = link.targetUrl
+                    if url and (url not in existing_urls) and (url not in seen_unvisited):
+                        unvisited_objects.append(link)
+                        seen_unvisited.add(url)
 
-            for link in links:
-                url = link.targetUrl
-                # It must not be in the DB AND must not have been seen earlier in this loop
-                if url and (url not in existing_urls) and (url not in seen_unvisited):
-                    unvisited_objects.append(link)
-                    seen_unvisited.add(url)  # Block subsequent duplicates
-
-            return unvisited_objects
+                return unvisited_objects
+        except Exception as e:
+            logger.error(f"check_if_visited failed: {e}", exc_info=True)
+            return []
 
     def complete(self, id):
-        with self.engine.connect() as conn:
-            conn.execute(
-                text("""
-                UPDATE  job
-                SET status = "done"
-                WHERE job_id =:job_id
-                """),
-                {"job_id": id},
-            )
+        try:
+            with self.engine.connect() as conn:
+                conn.execute(
+                    text("""
+                    UPDATE  job
+                    SET status = 'done'
+                    WHERE job_id =:job_id
+                    """),
+                    {"job_id": id},
+                )
+                conn.commit()
+        except Exception as e:
+            logger.error(f"complete failed for job {id}: {e}", exc_info=True)

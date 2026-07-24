@@ -70,25 +70,6 @@ func (j *JobRepository) UpdateStatus(id string, status string) error {
 
 var ServerSendChan = make(chan string, 1000)
 
-// func (j *JobRepository) Listen() {
-// 	_, err := j.Pool.Exec(CTX, "LISTEN FOR job_updates")
-// 	if err != nil {
-// 		log.Fatal("COuldnt start the listening to the db")
-// 		return
-// 	}
-// 	for {
-
-// 		notification, err := j.Pool.WaitForNotification(CTX)
-// 		if err != nil {
-// 			log.Println("Listening error:", err)
-// 			continue
-// 		}
-// 		ServerSendChan <- notification.Payload
-
-// 	}
-
-// }
-
 func (j *JobRepository) Listen() {
 	conn, err := j.Pool.Acquire(CTX)
 	if err != nil {
@@ -105,11 +86,11 @@ func (j *JobRepository) Listen() {
 	for {
 
 		notification, err := conn.Conn().WaitForNotification(CTX)
-		log.Print("new job updated")
 		if err != nil {
-			log.Println("Listening error:", err)
+			log.Println("job_updates listen error:", err)
 			return
 		}
+		log.Println("job update notification:", notification.Payload)
 
 		ServerSendChan <- notification.Payload
 	}
@@ -127,7 +108,7 @@ func (j *JobRepository) SendToServer() {
 
 		err := row.Scan(&jobID, &userID, &status)
 		if err != nil {
-			log.Print("Error in the send to server thing in the job repo")
+			log.Printf("send-to-server scan error for job %s: %v", id, err)
 			continue
 		}
 		websockets.DBEventChan <- websockets.Event{

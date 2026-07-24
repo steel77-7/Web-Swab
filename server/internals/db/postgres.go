@@ -14,9 +14,6 @@ var JobHandler JobRepository
 var UserHandler UserRepository
 
 func NewDbPoolInit() {
-	log.Print("2")
-
-	log.Print(config.Conf.DB_URI)
 	pool, err := pgxpool.New(CTX, config.Conf.DB_URI)
 	//	f := func() {}
 	if err != nil {

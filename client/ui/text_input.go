@@ -1,10 +1,12 @@
 package ui
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"charm.land/bubbles/v2/cursor"
 	"charm.land/bubbles/v2/textinput"
@@ -98,7 +100,30 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// ── server log event ────────────────────────────────────
 	case LogEventMsg:
-		m.logPanel.Push(msg.Payload)
+		displayStr := msg.Payload
+		var envelope struct {
+			Kind string          `json:"kind"`
+			Data json.RawMessage `json:"data"`
+		}
+		if err := json.Unmarshal([]byte(msg.Payload), &envelope); err == nil && len(envelope.Data) > 0 {
+			var logData struct {
+				JobID   string `json:"job_id"`
+				Level   string `json:"level"`
+				Message string `json:"message"`
+			}
+			// Data might be stringified JSON or a JSON object
+			var rawStr string
+			if err := json.Unmarshal(envelope.Data, &rawStr); err == nil {
+				if err := json.Unmarshal([]byte(rawStr), &logData); err == nil && logData.Message != "" {
+					displayStr = fmt.Sprintf("[%s] %s", strings.ToUpper(logData.Level), logData.Message)
+				} else {
+					displayStr = rawStr
+				}
+			} else if err := json.Unmarshal(envelope.Data, &logData); err == nil && logData.Message != "" {
+				displayStr = fmt.Sprintf("[%s] %s", strings.ToUpper(logData.Level), logData.Message)
+			}
+		}
+		m.logPanel.Push(displayStr)
 		// Re-subscribe to wait for the next event.
 		return m, waitForServerEvent
 
@@ -149,7 +174,43 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			// Submit
 			if s == "enter" && m.focusIndex == len(m.inputs) {
-				return m, tea.Quit
+				targetURL := strings.TrimSpace(m.inputs[0].Value())
+				if targetURL == "" {
+					m.logPanel.Push("[CLIENT ERROR] URL cannot be empty")
+					return m, nil
+				}
+
+				depth := 1
+				if d, err := strconv.Atoi(m.inputs[1].Value()); err == nil && d > 0 {
+					depth = d
+				}
+
+				jobID := fmt.Sprintf("job-%d", time.Now().UnixNano()/1e6)
+				jobData := map[string]any{
+					"id":     jobID,
+					"status": "pending",
+					"url":    targetURL,
+					"depth":  depth,
+				}
+
+				jobBytes, err := json.Marshal(jobData)
+				if err != nil {
+					m.logPanel.Push(fmt.Sprintf("[CLIENT ERROR] Failed to serialize job: %v", err))
+					return m, nil
+				}
+
+				// Non-blocking send to ws.SendChan
+				go func() {
+					ws.SendChan <- jobBytes
+				}()
+
+				m.logPanel.Push(fmt.Sprintf("[CLIENT] Submitted job %s for %s (depth %d)", jobID, targetURL, depth))
+				m.inputs[0].SetValue("")
+				m.inputs[1].SetValue("")
+				m.focusIndex = 0
+				m.inputs[0].Focus()
+				m.inputs[1].Blur()
+				return m, nil
 			}
 
 			// Cycle indexes

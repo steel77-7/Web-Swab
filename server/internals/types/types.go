@@ -13,6 +13,7 @@ type Config struct {
 	DB_URI      string `env:"DB_URI,required"`
 	BROKER_URL  string `env:"BROKER_URL,required"`
 	BROKER_PORT string `env:"BROKER_PORT,required"`
+	REDIS_URL   string `env:"REDIS_URL" envDefault:"localhost:6379"`
 
 	//	CLIENT_URL string `env:"CLIENT_URL"`
 	SERVER_URL string `env:"SERVER_URL"`

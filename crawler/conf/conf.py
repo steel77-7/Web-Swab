@@ -27,7 +27,6 @@ def load_config():
             "DB_URI", "postgresql://postgres:postgres@localhost/crawler?sslmode=disable"
         ),
     )
-    print("conf: ", conf)
 
 
 conf = load_config()

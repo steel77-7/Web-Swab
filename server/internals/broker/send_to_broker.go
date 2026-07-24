@@ -16,7 +16,7 @@ import (
 
 func PushToBroker(job types.Job) error {
 	client := &http.Client{
-		Timeout: 10 * time.Millisecond,
+		Timeout: 5 * time.Second,
 	}
 
 	tbs, _ := json.Marshal([]types.JobTbs{
@@ -30,17 +30,17 @@ func PushToBroker(job types.Job) error {
 		},
 	},
 	)
-	log.Print("Data to be sent :", string(tbs))
+	log.Printf("pushing job %s to broker", job.ID)
 	req, _ := http.NewRequest("POST", "http://"+config.Conf.BROKER_URL+":"+config.Conf.BROKER_PORT+"/ingest", bytes.NewBuffer(tbs))
 	resp, err := client.Do(req)
 	if err != nil {
-		log.Print("Couldnt send the request to the broker", err)
+		log.Printf("broker request failed: %v", err)
 		return err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode > 300 {
-		log.Print("Response code: ", resp.StatusCode)
-		return fmt.Errorf("Couldnt send the repsonse ...status code:", resp.StatusCode)
+		log.Printf("broker returned status %d", resp.StatusCode)
+		return fmt.Errorf("broker returned status %d", resp.StatusCode)
 	}
 	//just reply with something or some retry logic ............
 	return nil

@@ -128,6 +128,7 @@
 #             return err
 import asyncio
 import json
+import logging
 import os
 import socket
 import struct
@@ -139,6 +140,8 @@ from enum import IntEnum
 from conf.conf import conf
 from jobhandler.jobhandler import jobhandler
 from models.models import Job
+
+logger = logging.getLogger(__name__)
 
 # ============================================================
 # CONFIG
@@ -358,33 +361,11 @@ class BrokerClient:
     # --------------------------------------------------------
 
     async def process_job(self, job: JobInfo):
-        """
-        =======================================================
-        PLACE YOUR JOB HANDLER HERE
-        =======================================================
-
-        Replace this with your own worker logic.
-
-        Example:
-
-            await jobhandler(job ,conf)
-
-        or
-
-            result = await jobhandler(job)
-
-        =======================================================
-        """
-        print(f"Processing job {job.id}")
-        jobhandler(job.data)
-
-        # -----------------------------------
-        # YOUR CODE HERE
-        # -----------------------------------
-
-        # await jobhandler(job)
-
-        # -----------------------------------
+        logger.info(f"Processing job {job.id}")
+        try:
+            await asyncio.to_thread(jobhandler, job.data)
+        except Exception as e:
+            logger.error(f"Error processing job {job.id}: {e}", exc_info=True)
 
         ack = Message(
             length=len(job.id.encode()) + 1,

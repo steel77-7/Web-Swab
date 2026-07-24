@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"time"
 
 	"github.com/joho/godotenv"
 	"github.com/steel77-7/Web-Swab/config"
+	redispubsub "github.com/steel77-7/Web-Swab/internals/redis"
 	"github.com/steel77-7/Web-Swab/websockets"
 )
 
@@ -20,6 +20,18 @@ func main() {
 	//	db.NewDbPoolInit()
 	//go db.JobHandler.Listen()
 	handler := websockets.NewServer()
+
+	// Set up Redis log subscriber — routes crawler logs to the correct client.
+	redisSub, err := redispubsub.NewLogSubscriber(config.Conf.REDIS_URL, func(jobID string, data []byte) {
+		handler.SendToSubscriber(jobID, data)
+	})
+	if err != nil {
+		log.Printf("redis subscriber unavailable: %v (log streaming disabled)", err)
+	} else {
+		handler.SetRedisSubscriber(redisSub)
+		defer redisSub.Close()
+	}
+
 	//::testing
 	// job := types.Job{
 	// 	ID:     "test2",
@@ -33,12 +45,9 @@ func main() {
 	server := &http.Server{
 		Addr:           ":" + fmt.Sprint(7000),
 		Handler:        handler,
-		ReadTimeout:    5 * time.Second,
-		WriteTimeout:   5 * time.Second,
-		IdleTimeout:    10 * time.Second,
 		MaxHeaderBytes: 1 << 20,
 	}
-	log.Print("Server is running")
+	log.Print("server running on :7000")
 	log.Fatal(server.ListenAndServe())
-
 }
+
