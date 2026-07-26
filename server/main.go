@@ -1,12 +1,13 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"net/http"
 
 	"github.com/joho/godotenv"
 	"github.com/steel77-7/Web-Swab/config"
+	"github.com/steel77-7/Web-Swab/internals/db"
+	"github.com/steel77-7/Web-Swab/internals/export"
 	redispubsub "github.com/steel77-7/Web-Swab/internals/redis"
 	"github.com/steel77-7/Web-Swab/websockets"
 )
@@ -17,9 +18,12 @@ func main() {
 
 	config.Conf = config.LoadConfig()
 	//	router := api.NewRouter()
-	//	db.NewDbPoolInit()
+	db.NewDbPoolInit()
 	//go db.JobHandler.Listen()
 	handler := websockets.NewServer()
+	if db.JobHandler.Pool != nil {
+		handler.SetExporter(export.NewExporter(db.JobHandler.Pool))
+	}
 
 	// Set up Redis log subscriber — routes crawler logs to the correct client.
 	redisSub, err := redispubsub.NewLogSubscriber(config.Conf.REDIS_URL, func(jobID string, data []byte) {
@@ -43,11 +47,11 @@ func main() {
 	//::testing
 	//router.Use(gin.Recovery())
 	server := &http.Server{
-		Addr:           ":" + fmt.Sprint(7000),
+		Addr:           ":" + config.Conf.SERVER_PORT,
 		Handler:        handler,
-		MaxHeaderBytes: 1 << 20,
+		MaxHeaderBytes: config.Conf.MAX_HEADER_BYTES,
 	}
-	log.Print("server running on :7000")
+	log.Printf("server running on :%s", config.Conf.SERVER_PORT)
 	log.Fatal(server.ListenAndServe())
 }
 

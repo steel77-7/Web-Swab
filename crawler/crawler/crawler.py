@@ -27,7 +27,6 @@ class Crawler:
         parsed_url = urlparse(job.url)
         self.root_url = f"{parsed_url.scheme}://{parsed_url.netloc}/robots.txt"
         self.url = job.url
-        # self.extractor = Extractor(job.url)
         self.caching = Caching()
         self.jobRepo = JobRepository()
         self.tbs = Tbs()
@@ -35,7 +34,6 @@ class Crawler:
         self.job = job
         self.tbs_job = Job_db()
         self.broker = Broker(conf.broker_url)
-        # print("JOB", self.tbs.url.model_dump())
 
     def add(self):
         self.caching.publish_log(self.id, "info", f"job started: {self.url} (depth {self.job.depth})")
@@ -46,9 +44,7 @@ class Crawler:
                 rp.set_url(self.root_url + "/robots.txt")
                 try:
                     rp.read()
-                    delay = rp.crawl_delay(
-                        "SteelCrawler/1.0 (+https://github.com/steel77-7/)"
-                    )
+                    delay = rp.crawl_delay(conf.crawler_user_agent)
                     if delay is not None:
                         self.caching.add_robot(
                             {
@@ -67,7 +63,6 @@ class Crawler:
                 return
             url_in_db, broker_links, done = self.jobRepo.check_url(self.job)
             if job_in_db and not in_redis:
-                # either a depth continuation or duplicate job
                 self.caching.publish_log(self.id, "info", f"crawling {self.url} (depth continuation)")
                 self.extractor = Extractor(self.url)
 
@@ -91,15 +86,16 @@ class Crawler:
                 self.caching.publish_log(self.id, "info", f"extracted {len(links)} links from {self.url}")
                 if self.job.depth > 1:
                     links = self.jobRepo.check_if_visited(links)
-                    for l in links:
-                        job = Job(
-                            id=self.id,
-                            status=JobStatus.PENDING,
-                            depth=self.job.depth - 1,
-                            url=l.targetUrl,
-                        )
-
-                        structured_data.append(job)
+                    sub_depth = self.job.depth - 1
+                    if sub_depth >= 1:
+                        for l in links:
+                            job = Job(
+                                id=self.id,
+                                status=JobStatus.PENDING,
+                                depth=sub_depth,
+                                url=l.targetUrl,
+                            )
+                            structured_data.append(job)
                     if len(structured_data) > 0:
                         self.caching.inc_job_count(self.id, len(structured_data))
                     self.caching.publish_log(self.id, "info", f"sending {len(structured_data)} sub-jobs to broker")
@@ -107,7 +103,6 @@ class Crawler:
 
             elif not job_in_db and not in_redis:
                 if not url_in_db:
-                    # totally new job
                     self.caching.publish_log(self.id, "info", f"crawling {self.url} (new job, depth {self.job.depth})")
                     self.extractor = Extractor(self.url)
                     self.caching.update_next_time(self.root_url)
@@ -131,15 +126,16 @@ class Crawler:
                     self.caching.publish_log(self.id, "info", f"extracted {len(links)} links from {self.url}")
                     if self.job.depth > 1:
                         links = self.jobRepo.check_if_visited(links)
-                        for l in links:
-                            job = Job(
-                                id=self.id,
-                                status=JobStatus.PENDING,
-                                depth=self.job.depth - 1,
-                                url=l.targetUrl,
-                            )
-
-                            structured_data.append(job)
+                        sub_depth = self.job.depth - 1
+                        if sub_depth >= 1:
+                            for l in links:
+                                job = Job(
+                                    id=self.id,
+                                    status=JobStatus.PENDING,
+                                    depth=sub_depth,
+                                    url=l.targetUrl,
+                                )
+                                structured_data.append(job)
                         if len(structured_data) > 0:
                             self.caching.inc_job_count(self.id, len(structured_data))
                         self.caching.publish_log(self.id, "info", f"sending {len(structured_data)} sub-jobs to broker")

@@ -9,7 +9,6 @@ logger = logging.getLogger(__name__)
 
 
 def jobhandler(job):
-    """Parse a raw job payload and run the crawler on it."""
     try:
         if isinstance(job, str):
             job = json.loads(job)

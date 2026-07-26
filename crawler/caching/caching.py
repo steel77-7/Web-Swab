@@ -3,15 +3,16 @@ import logging
 from datetime import datetime, timedelta
 
 import redis
+from conf.conf import conf
 
 logger = logging.getLogger(__name__)
 
 
 class Caching:
     def __init__(self):
-        self.r = redis.Redis(host="localhost", port=6379, db=0)
+        self.r = redis.Redis(host=conf.redis_url, port=conf.redis_port, db=0)
 
-    def check_if_present(self, id):  # data.payload will already be a dict
+    def check_if_present(self, id):
         if self.r.exists(id):
             return True
         return False
@@ -38,9 +39,7 @@ class Caching:
     def crawl_ready(self, domain):
         res = self.r.hgetall(f"robot:{domain}")
         if not res:
-            # No robot data cached — allow crawling
             return True
-        # Redis returns bytes, decode the key we need
         nextcrawl_raw = res.get(b"nextcrawl") or res.get("nextcrawl")
         if nextcrawl_raw is None:
             return True
@@ -49,7 +48,6 @@ class Caching:
         try:
             nextcrawl = datetime.strptime(str(nextcrawl_raw), "%Y-%m-%d %H:%M:%S")
         except (ValueError, TypeError):
-            # Can't parse the stored timestamp — allow crawling
             logger.warning(f"unparseable nextcrawl value: {nextcrawl_raw}")
             return True
         if nextcrawl > datetime.now():
@@ -77,7 +75,6 @@ class Caching:
         )
 
     def publish_log(self, job_id, level, message):
-        """Publish a log event to the per-job Redis pub/sub channel."""
         try:
             payload = json.dumps(
                 {
@@ -89,18 +86,15 @@ class Caching:
             )
             self.r.publish(f"crawl:logs:{job_id}", payload)
         except redis.RedisError as e:
-            # Log publishing should never crash the crawler
             logger.warning(f"failed to publish log for job {job_id}: {e}")
 
     def init_job_count(self, job_id: str):
-        """Initialize the reference count hash in Redis for a job if not already present."""
         try:
             self.r.hsetnx(f"job:{job_id}", "count", 1)
         except redis.RedisError as e:
             logger.warning(f"failed to init job count for {job_id}: {e}")
 
     def inc_job_count(self, job_id: str, amount: int):
-        """Increment the job reference count by the number of new sub-jobs queued."""
         if amount <= 0:
             return
         try:
@@ -110,8 +104,6 @@ class Caching:
             logger.warning(f"failed to inc job count for {job_id}: {e}")
 
     def dec_job_count_and_check(self, job_id: str) -> int:
-        """Decrement the job reference count by 1 after a unit of work finishes.
-        If the count reaches 0, publish a completion event to the Redis pub/sub channel."""
         try:
             val = self.r.hincrby(f"job:{job_id}", "count", -1)
             logger.debug(f"dec_job_count for {job_id} -> current count: {val}")
@@ -121,8 +113,7 @@ class Caching:
                     "info",
                     f"Crawl job {job_id} completed successfully!",
                 )
-                # Set TTL on job hash so completed job keys don't leak forever
-                self.r.expire(f"job:{job_id}", 3600)
+                self.r.delete(f"job:{job_id}")
             return val
         except redis.RedisError as e:
             logger.warning(f"failed to dec job count for {job_id}: {e}")

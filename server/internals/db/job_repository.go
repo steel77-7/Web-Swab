@@ -7,7 +7,6 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/steel77-7/Web-Swab/internals/types"
-	"github.com/steel77-7/Web-Swab/websockets"
 )
 
 type JobRepository struct {
@@ -97,22 +96,5 @@ func (j *JobRepository) Listen() {
 }
 
 // fetcher
-func (j *JobRepository) SendToServer() {
-	q := `SELECT id ,user_id, status FROM jobs WHERE id = $1`
-	for {
-		id := <-ServerSendChan
-		row := j.Pool.QueryRow(CTX, q, id)
-		var jobID string
-		var userID string
-		var status string
-
-		err := row.Scan(&jobID, &userID, &status)
-		if err != nil {
-			log.Printf("send-to-server scan error for job %s: %v", id, err)
-			continue
-		}
-		websockets.DBEventChan <- websockets.Event{
-			ClientID: userID, Status: types.JobStatus(status), JobID: jobID,
-		}
-	}
-}
+// SendToServer is a legacy helper method.
+// func (j *JobRepository) SendToServer() { ... }

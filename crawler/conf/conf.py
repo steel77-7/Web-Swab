@@ -13,6 +13,9 @@ class Config:
     broker_tcp_port: int
     broker_secret: str
     db_uri: str
+    redis_url: str
+    redis_port: int
+    crawler_user_agent: str
 
 
 def load_config():
@@ -21,10 +24,16 @@ def load_config():
     return Config(
         broker_url=os.getenv("BROKER_URL", "127.0.0.1"),
         broker_http_port=int(os.getenv("BROKER_HTTP_PORT", "8000")),
-        broker_tcp_port=int(os.getenv("BROKER_TCP_PORT", "8000")),
+        broker_tcp_port=int(os.getenv("BROKER_TCP_PORT", "9000")),
         broker_secret=os.getenv("BROKER_SECRET", "secret"),
         db_uri=os.getenv(
             "DB_URI", "postgresql://postgres:postgres@localhost/crawler?sslmode=disable"
+        ),
+        redis_url=os.getenv("REDIS_URL", "localhost"),
+        redis_port=int(os.getenv("REDIS_PORT", "6379")),
+        crawler_user_agent=os.getenv(
+            "CRAWLER_USER_AGENT",
+            "SteelCrawler/1.0 (+https://github.com/steel77-7/)",
         ),
     )
 

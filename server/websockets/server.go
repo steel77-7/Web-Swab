@@ -1,5 +1,3 @@
-// this file will be used in the final version
-// rn raw http calls will be used to enter data into the server
 package websockets
 
 import (
@@ -10,12 +8,14 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/coder/websocket"
 	"github.com/google/uuid"
 	"github.com/steel77-7/Web-Swab/internals/broker"
+	"github.com/steel77-7/Web-Swab/internals/export"
 	redispubsub "github.com/steel77-7/Web-Swab/internals/redis"
 	"github.com/steel77-7/Web-Swab/internals/types"
 	"golang.org/x/time/rate"
@@ -39,24 +39,49 @@ type Server struct {
 	subscribersMu           sync.Mutex
 	subscribers             map[string]*subscriber
 	redisSub                *redispubsub.LogSubscriber
+	Exporter                *export.Exporter
 }
 
 func NewServer() *Server {
 	s := &Server{
-		subscriberMessageBuffer: 16,
+		subscriberMessageBuffer: 10000,
 		logf:                    log.Printf,
 		subscribers:             make(map[string]*subscriber),
 		publishLimiter:          rate.NewLimiter(rate.Every(time.Millisecond*100), 8),
 	}
-	//	s.serveMux.Handle("/", http.FileServer(http.Dir(".")))
 	s.ServeMux.HandleFunc("/subscribe", s.subscribeHandler)
 	log.Print("websocket server initialized")
 	return s
 }
 
-// SetRedisSubscriber attaches the Redis log subscriber to the server.
 func (s *Server) SetRedisSubscriber(rs *redispubsub.LogSubscriber) {
 	s.redisSub = rs
+}
+
+func (s *Server) SetExporter(exp *export.Exporter) {
+	s.Exporter = exp
+}
+
+func (s *Server) ExportJob(jobID string) {
+	if s.Exporter == nil {
+		s.Exporter = export.NewExporter(nil)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	s.logf("building export archive for job %s...", jobID)
+	zipBytes, err := s.Exporter.BuildZip(ctx, jobID)
+	if err != nil {
+		s.logf("failed to build zip export for job %s: %v", jobID, err)
+		return
+	}
+
+	export.StreamZipOverWebSocket(jobID, zipBytes, func(msg map[string]any) {
+		data, err := json.Marshal(msg)
+		if err == nil {
+			s.SendToSubscriber(jobID, data)
+		}
+	})
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -82,7 +107,6 @@ func (s *Server) subscribe(w http.ResponseWriter, r *http.Request) error {
 	id := s.addSubscriber(sub)
 	defer s.deleteSubscriber(id)
 
-	// clients are accepted here
 	c2, err := websocket.Accept(w, r, nil)
 	if err != nil {
 		return err
@@ -93,20 +117,18 @@ func (s *Server) subscribe(w http.ResponseWriter, r *http.Request) error {
 		return net.ErrClosed
 	}
 	c = c2
+	c.SetReadLimit(10 * 1024 * 1024)
 	mu.Unlock()
 	defer c.CloseNow()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// jobIDChan receives the job ID when the client sends a DATA message,
-	// so we can re-key the subscriber map and start the Redis subscription.
 	jobIDChan := make(chan string, 1)
 
 	readErrc := make(chan error, 1)
 	go s.readLoop(ctx, c, readErrc, jobIDChan)
 
-	// Track the job ID so we can clean up the Redis subscription on exit.
 	var activeJobID string
 	defer func() {
 		if activeJobID != "" && s.redisSub != nil {
@@ -123,12 +145,10 @@ func (s *Server) subscribe(w http.ResponseWriter, r *http.Request) error {
 				return err
 			}
 		case jobID := <-jobIDChan:
-			// Re-key subscriber: remove the temp UUID, store under job ID.
 			s.rekeySubscriber(id, jobID, sub)
 			id = jobID
 			activeJobID = jobID
 
-			// Start Redis subscription for this job's logs.
 			if s.redisSub != nil {
 				s.redisSub.Subscribe(jobID)
 				log.Printf("started redis log subscription for job %s", jobID)
@@ -164,7 +184,6 @@ func (s *Server) readLoop(ctx context.Context, c *websocket.Conn, errc chan<- er
 			}
 			s.logf("job received: %s", string(parsedMsg.Data))
 
-			// Notify the subscribe loop to re-key and start Redis sub.
 			if job.ID != "" {
 				if s.redisSub != nil {
 					s.redisSub.InitJobCount(job.ID)
@@ -172,11 +191,9 @@ func (s *Server) readLoop(ctx context.Context, c *websocket.Conn, errc chan<- er
 				select {
 				case jobIDChan <- job.ID:
 				default:
-					// Already sent a job ID, skip re-keying.
 				}
 			}
 
-			// push to broker
 			go func(j types.Job) {
 				if err := broker.PushToBroker(j); err != nil {
 					s.logf("push to broker failed for job %s: %v", j.ID, err)
@@ -212,9 +229,7 @@ func msgParser(msg []byte) (Message, error) {
 	return res, nil
 }
 
-// publish broadcasts a message to all connected subscribers.
-func (s *Server) publish(msg Message) {
-
+func (s *Server) publish(ctx context.Context, msg Message) {
 	s.publishLimiter.Wait(context.Background())
 
 	s.subscribersMu.Lock()
@@ -228,22 +243,26 @@ func (s *Server) publish(msg Message) {
 	}
 }
 
-// SendToSubscriber sends a log message to a specific subscriber identified by job ID.
 func (s *Server) SendToSubscriber(jobID string, data []byte) {
 	msg := Message{Kind: "LOG", Data: data}
 
-	s.subscribersMu.Lock()
-	defer s.subscribersMu.Unlock()
+	payloadStr := string(data)
+	if strings.Contains(payloadStr, "completed successfully") || strings.Contains(payloadStr, "\"status\":\"completed\"") {
+		go s.ExportJob(jobID)
+	}
 
+	s.subscribersMu.Lock()
 	sub, ok := s.subscribers[jobID]
+	s.subscribersMu.Unlock()
+
 	if !ok {
 		return
 	}
 
 	select {
 	case sub.msgs <- msg:
-	default:
-		go sub.closeSlow()
+	case <-time.After(2 * time.Second):
+		s.logf("warning: subscriber buffer full for job %s, frame timed out", jobID)
 	}
 }
 
@@ -255,7 +274,6 @@ func (s *Server) addSubscriber(sub *subscriber) string {
 	return id
 }
 
-// rekeySubscriber moves a subscriber from an old key (temp UUID) to a new key (job ID).
 func (s *Server) rekeySubscriber(oldID, newID string, sub *subscriber) {
 	s.subscribersMu.Lock()
 	defer s.subscribersMu.Unlock()

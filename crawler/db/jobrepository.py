@@ -15,10 +15,6 @@ class JobRepository:
     def __init__(self):
         self.engine = engine
 
-    # url is in db ....
-    # the data must be copied form the older link log to new one
-    # then the dpeth must be reduced for that url
-
     def depth_handler(self, job):
         try:
             with Session(self.engine) as conn:
@@ -66,17 +62,19 @@ class JobRepository:
                 conn.commit()
                 jobs = []
                 if job.depth > 1:
-                    for l in links:
-                        base = l.sourceUrl
-                        relative = l.targetUrl
-                        absolute = urljoin(base, relative)
-                        jobb = Job(
-                            id=job.id,
-                            status=JobStatus.PENDING,
-                            depth=job.depth - 1,
-                            url=absolute,
-                        )
-                        jobs.append(jobb)
+                    sub_depth = job.depth - 1
+                    if sub_depth >= 1:
+                        for l in links:
+                            base = l.sourceUrl
+                            relative = l.targetUrl
+                            absolute = urljoin(base, relative)
+                            jobb = Job(
+                                id=job.id,
+                                status=JobStatus.PENDING,
+                                depth=sub_depth,
+                                url=absolute,
+                            )
+                            jobs.append(jobb)
                 return jobs
         except Exception as e:
             logger.error(f"depth_handler failed for job {job.id}: {e}", exc_info=True)
@@ -320,11 +318,12 @@ class JobRepository:
                     links = self.check_if_visited(links)
 
                     if job.depth > 1:
+                        sub_depth = max(1, abs(dif))
                         for l in links:
                             jobb = Job(
                                 id=job.id,
                                 status=JobStatus.PENDING,
-                                depth=abs(dif),
+                                depth=sub_depth,
                                 url=l.targetUrl,
                             )
                             tbr.append(jobb)
@@ -337,20 +336,16 @@ class JobRepository:
     def insert_tbs(self, data):
         with Session(self.engine) as session:
             try:
-                # 1. Check if the URL already exists using its unique string attribute
                 existing_url = session.scalars(
                     select(Url).filter_by(url=data["url"].url)
                 ).first()
 
                 if existing_url:
-                    # Use the undisturbed, existing DB entry
                     data["url"] = existing_url
                 else:
-                    # Brand new URL, insert it safely
                     session.add(data["url"])
                     session.flush()
 
-                # 2. Handle the job logic
                 if data["job"] is not None:
                     data["job"].url_id = data["url"].id
                     session.add(data["job"])
@@ -375,7 +370,6 @@ class JobRepository:
                     data["job_log"].root_depth = row.depth
                     data["job_log"].depth = row.depth - data["job_log"].depth
 
-                # 3. Attach the URL IDs to dependent models and save everything
                 data["job_log"].url_id = data["url"].id
                 data["metadata"].url_id = data["url"].id
                 data["content"].url_id = data["url"].id
@@ -395,12 +389,10 @@ class JobRepository:
     def check_if_visited(self, links):
         try:
             with Session(self.engine) as session:
-                # 1. Normalize all target URLs to absolute paths
                 for link in links:
                     if link.sourceUrl and link.targetUrl:
                         link.targetUrl = urljoin(link.sourceUrl, link.targetUrl)
 
-                # 2. Extract the resolved unique target strings for the DB query
                 incoming_urls = {link.targetUrl for link in links if link.targetUrl}
 
                 if not incoming_urls:
@@ -409,7 +401,6 @@ class JobRepository:
                 stmt = select(Url.url).where(Url.__table__.c.url.in_(incoming_urls))
                 existing_urls = set(session.scalars(stmt).all())
 
-                # 3. Filter out items in DB AND clear duplicates within the batch
                 unvisited_objects = []
                 seen_unvisited = set()
 

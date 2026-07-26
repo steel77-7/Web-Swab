@@ -16,7 +16,9 @@ type Config struct {
 	REDIS_URL   string `env:"REDIS_URL" envDefault:"localhost:6379"`
 
 	//	CLIENT_URL string `env:"CLIENT_URL"`
-	SERVER_URL string `env:"SERVER_URL"`
+	SERVER_URL       string `env:"SERVER_URL"`
+	SERVER_PORT      string `env:"SERVER_PORT" envDefault:"7000"`
+	MAX_HEADER_BYTES int    `env:"MAX_HEADER_BYTES" envDefault:"1048576"`
 }
 
 // processing the jobs

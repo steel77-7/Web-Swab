@@ -5,6 +5,7 @@ from urllib.robotparser import RobotFileParser
 
 import requests
 from bs4 import BeautifulSoup
+from conf.conf import conf
 from models.models import Content, Links, Metadata, Tbs
 
 logger = logging.getLogger(__name__)
@@ -15,7 +16,7 @@ class Extractor(BeautifulSoup):
         self.url = url
         self.fetched = False
 
-        headers = {"User-Agent": ("SteelCrawler/1.0 (+https://github.com/steel77-7/)")}
+        headers = {"User-Agent": conf.crawler_user_agent}
         try:
             response = requests.get(url, headers=headers, timeout=15)
         except requests.RequestException as e:
@@ -47,12 +48,9 @@ class Extractor(BeautifulSoup):
         self.links = []
 
     def check_if_js(self):
-        # check for js rendered sites
         pass
 
-    def extract_links(
-        self,
-    ):  # will be sent to the broker later .....but what about the db then ??
+    def extract_links(self):
         if not self.fetched:
             self.links = []
             return
@@ -62,7 +60,7 @@ class Extractor(BeautifulSoup):
             l = Links()
             targeturl = link.get("href")
             if not targeturl:
-                continue  # skip this link, don't abort the whole loop
+                continue
 
             anchortext = link.get_text(strip=True)
             l.linkType = ""

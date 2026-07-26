@@ -1,9 +1,8 @@
-# sending to the broker
-# handling the sending errors
 import logging
 from typing import List
 
 import requests
+from conf.conf import conf
 from models.models import Job, JobMeta, JobTbs
 
 logger = logging.getLogger(__name__)
@@ -14,7 +13,6 @@ class Broker:
         self.locator_uri = broker_uri
 
     def send_to_broker(self, data: List[Job], id) -> bool:
-        """Send jobs to the broker. Returns True on success, False on failure."""
         try:
             final = []
             for d in data:
@@ -24,8 +22,9 @@ class Broker:
                 payload = JobTbs(metadata=job_metadata, data=d)
                 final.append(payload.model_dump())
 
+            broker_ingest_url = f"http://{conf.broker_url}:{conf.broker_http_port}/ingest"
             response = requests.post(
-                "http://127.0.0.1:8000/ingest", json=final, timeout=10
+                broker_ingest_url, json=final, timeout=10
             )
             if response.status_code >= 400:
                 logger.error(
